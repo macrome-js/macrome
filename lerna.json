@@ -1,0 +1,5 @@
+{
+  "lerna": "2.11.0",
+  "packages": ["macrome", "@macrome/*"],
+  "version": "0.0.0"
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@macrome/parser-babylon",
+  "version": "0.0.0",
+  "main": "lib/index.js",
+  "engines": {
+    "node": ">=8.3.0"
+  },
+  "repository": "git@github.com:conartist6/macrome.git",
+  "author": "Conrad Buck <conartist6@gmail.com>",
+  "license": "MIT",
+  "keywords": [
+    "macrome",
+    "macrome-plugin",
+    "babel",
+    "babylon",
+    "parse"
+  ],
+  "dependencies": {
+    "@babel/parser": "^7.10.2",
+    "@conartist6/recast": "^0.19.1-parens-fixes.1"
+  }
+}

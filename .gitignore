@@ -1,0 +1,9 @@
+node_modules
+.DS_Store
+*.lerna_backup
+/*/**/.git
+
+/@macrome/*/coverage
+/macrome/coverage
+
+/report.*
