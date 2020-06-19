@@ -44,7 +44,7 @@ function runCommand(macrome, command, argv) {
 
 if (!argv.help) {
   const macrome = new Macrome({ ...argv });
-  const command = argv[''][0];
+  const command = argv[''][0] || 'build';
 
   runCommand(macrome, command, argv).catch((e) => {
     console.error(e.stack);
