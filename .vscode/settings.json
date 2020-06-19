@@ -1,6 +1,8 @@
 {
   "eslint.options": {
     "rules": {
+      "no-debugger": "off",
+      "no-console": "off",
       "jest/no-focused-tests": "off"
     }
   }
