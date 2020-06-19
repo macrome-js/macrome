@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-/* eslint-disable no-process-exit */
+/* eslint-disable no-process-exit,no-console */
 
 const parseArgs = require('minimist');
 const camelize = require('camelize');

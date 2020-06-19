@@ -7,6 +7,7 @@ module.exports = {
   },
   ignorePatterns: ['**/test/sandbox/**'],
   rules: {
+    'no-console': 'error',
     'no-process-exit': 'error',
     'node/process-exit-as-throw': 'error',
   },

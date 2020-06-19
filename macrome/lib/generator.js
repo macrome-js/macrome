@@ -38,6 +38,10 @@ class Generator extends Matchable {
     return this.options.parser;
   }
 
+  get logger() {
+    return this.macrome.logger;
+  }
+
   get generatedPaths() {
     return this.macrome.generatedPaths;
   }
@@ -83,7 +87,7 @@ class Generator extends Matchable {
         verb = 'printing';
         content = this.print(ast).code;
       } catch (e) {
-        console.warn(`Failed ${verb} ${errorPath}`);
+        this.logger.warn(`Failed ${verb} ${errorPath}`);
 
         isError = true;
 
@@ -100,7 +104,7 @@ class Generator extends Matchable {
       try {
         this.write(destPath, content);
       } catch (e) {
-        console.error(`Failed writing ${isError ? 'error ' : ''}to ${destPath}`);
+        this.logger.error(`Failed writing ${isError ? 'error ' : ''}to ${destPath}`);
         throw e;
       }
     }
@@ -150,10 +154,6 @@ class Generator extends Matchable {
 
   unlink(path) {
     this.macrome.unlink(path);
-  }
-
-  log(...args) {
-    this.macrome.log(...args);
   }
 
   writeMonolithic(path, content) {

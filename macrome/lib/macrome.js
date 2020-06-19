@@ -1,6 +1,5 @@
 'use strict';
 
-const loglevel = require('loglevel');
 const { join, dirname, basename, relative } = require('path');
 const fs = require('fs');
 const requireFresh = require('import-fresh');
@@ -15,14 +14,6 @@ const { concat, filter, map, groupBy } = require('./utils/functional');
 const { ADD, REMOVE, UPDATE } = require('./operations');
 const { isGeneratedFromTemplate } = require('./comments');
 const { vcsConfigs } = require('./vcs-configs');
-
-const log = loglevel.getLogger('generator');
-
-const defaultOptions = {
-  rootDir: null,
-  quiet: false,
-  logger: console.log,
-};
 
 class Macrome {
   constructor(options = {}) {
@@ -44,7 +35,7 @@ class Macrome {
       configOptions = requireFresh(configPath);
 
       if (configOptions.configPath) {
-        console.warn('configPath is not a valid option in a config file.');
+        this.logger.warn('configPath is not a valid option in a config file.');
         delete configOptions.configPath;
       }
 
@@ -70,23 +61,29 @@ class Macrome {
     this.vcsRoot = dirname(vcsDir);
 
     this.options = {
-      ...defaultOptions,
+      rootDir: null,
+      quiet: false,
+      logger: {
+        /* eslint-disable no-console */
+        log: (...args) => {
+          if (!this.options.quiet) console.log(...args);
+        },
+        warn: console.warn,
+        error: console.error,
+        /* eslint-enable no-console */
+      },
       ...configOptions,
       ...options,
     };
 
-    const { quiet, generators } = this.options;
-
     this.generatedPaths = new FileCache(this.projectRoot);
     this.changeset = null;
-
-    log.setLevel(quiet ? 'error' : 'info');
 
     this.generators = new Map();
 
     this.generatorStubs = groupBy(
       (stub) => stub.resolvedPath,
-      generators.map((generator) => {
+      this.options.generators.map((generator) => {
         let path;
         let options;
         if (Array.isArray(generator)) {
@@ -251,7 +248,7 @@ class Macrome {
     await watchClient.flushSubscriptions();
     const { clock: startClock } = await watchClient.clock();
 
-    log.info('Initial generation completed; watching for changes...');
+    this.logger.log('Initial generation completed; watching for changes...');
 
     await watchClient.watchVCSLock();
 
@@ -321,7 +318,7 @@ class Macrome {
 
   async check() {
     if (this.vcsConfig.isDirty()) {
-      console.warn('Check was run with vcs changes in the working dir and cannot succeed');
+      this.logger.warn('Check was run with vcs changes in the working dir and cannot succeed');
       return false;
     }
 
@@ -333,10 +330,6 @@ class Macrome {
 
   resolve(path) {
     return join(this.projectRoot, path);
-  }
-
-  log(...args) {
-    this.options.logger.log(...args);
   }
 }
 
