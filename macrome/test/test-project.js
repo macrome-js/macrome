@@ -21,6 +21,7 @@ function testProject(projectRoot) {
   });
 
   afterAll(async () => {
+    run('git', ['add', '.']);
     run('git', ['checkout', 'HEAD', '--', '.']);
   });
 
