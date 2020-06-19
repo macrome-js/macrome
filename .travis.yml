@@ -1,0 +1,15 @@
+os: linux
+dist: focal
+addons:
+  apt:
+    packages:
+      - watchman
+
+language: node_js
+node_js:
+  - '10'
+
+before_script:
+  - npx lerna bootstrap
+
+script: npm run verify
