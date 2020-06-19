@@ -4,4 +4,6 @@ Options can be passed directly to the macrome constructor, and can also be speci
 
 **quiet**: Log less.
 
+**logger**: A logger object with `log`, `warn` and `error` methods. Defaults to `console`. If a `logger` is specified, the `quiet` option is not meaningful.
+
 **configPath**: The path to a macrome config file to use, or `false` if macrome should not search for a config, instead using only the passed options. `configPath` is not a valid option to specify in a config file.
