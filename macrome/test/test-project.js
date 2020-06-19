@@ -4,7 +4,7 @@ const { Macrome } = require('../lib');
 const { run, hasOutput, outputLines } = require('../lib/utils/shell');
 
 function isDirectoryClean(dir) {
-  return hasOutput('git', ['status', '-s', dir]);
+  return !hasOutput('git', ['status', '-s', dir]);
 }
 
 function testProject(projectRoot) {
@@ -44,9 +44,6 @@ function testProject(projectRoot) {
   });
 
   it('checks', async () => {
-    // For this to work we need to check in the files that are generated.
-    // Then all we need to do is start with a clean an verify the list of files
-    // deleted against a list and start building
     const clean = await macrome.check();
 
     expect(clean).toBe(true);

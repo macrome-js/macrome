@@ -5,7 +5,7 @@ const vcsConfigs = [
     name: 'test-vcs',
     dir: '.vcs',
     lock: 'vcs-lockfile',
-    isDirty: (dir) => hasOutput('git', ['status', '-s', dir]),
+    isDirty: (dir) => hasOutput('git', ['status', '-s', '.'], dir),
   },
 ];
 

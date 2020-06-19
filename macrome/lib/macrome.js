@@ -116,6 +116,10 @@ class Macrome {
     return concat(...map((gen) => gen.debouncedMethods, this.generatorInstances));
   }
 
+  get logger() {
+    return this.options.logger;
+  }
+
   instantiateGenerators(generatorPath) {
     const Generator = requireFresh(generatorPath);
 
