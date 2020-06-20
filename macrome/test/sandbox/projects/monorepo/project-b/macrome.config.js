@@ -1,3 +1,8 @@
 'use strict';
 
-module.exports = require('../../../macrome.simple.config.js');
+const BaseConfig = require('../../../macrome.base.config.js');
+
+module.exports = {
+  ...BaseConfig,
+  generators: ['../simple-generator'],
+};

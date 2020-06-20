@@ -1,10 +1,10 @@
 'use strict';
 
-const { Generator } = require('macrome');
+const { MapAstGenerator } = require('macrome');
 
 const { dirname, join, basename } = require('path');
 
-class GeneratorApplyBabelMacros extends Generator {
+class SimpleGenerator extends MapAstGenerator {
   constructor(macrome, options) {
     super(macrome, options);
 
@@ -18,9 +18,9 @@ class GeneratorApplyBabelMacros extends Generator {
     return join(dir, `generated-${base}`);
   }
 
-  generatePath({ ast, path }, destPath) {
+  mapAst(ast) {
     return ast;
   }
 }
 
-module.exports = GeneratorApplyBabelMacros;
+module.exports = SimpleGenerator;
