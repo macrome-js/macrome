@@ -7,7 +7,6 @@ const findUp = require('find-up');
 
 const { traverse } = require('./traverse');
 const { MacromeWatchmanClient } = require('./watchman');
-const { FileCache } = require('./file-cache');
 const { Changeset } = require('./changeset');
 const { concat, filter, map, groupBy } = require('./utils/functional');
 
@@ -76,7 +75,7 @@ class Macrome {
       ...options,
     };
 
-    this.generatedPaths = new FileCache(this.projectRoot);
+    this.generatedPaths = new Set();
     this.changeset = null;
 
     this.generators = new Map();
@@ -93,11 +92,10 @@ class Macrome {
           options = {};
         }
 
-        return {
-          options,
-          path,
-          resolvedPath: require.resolve(path, { paths: [this.projectRoot] }),
-        };
+        const resolvedPath = require.resolve(path, { paths: [this.projectRoot] });
+        const vcsPath = path.startsWith('.') ? relative(this.vcsRoot, resolvedPath) : path;
+
+        return { options, path, resolvedPath, vcsPath };
       }),
     );
 
@@ -112,10 +110,6 @@ class Macrome {
     return concat(...this.generators.values());
   }
 
-  get debouncedMethods() {
-    return concat(...map((gen) => gen.debouncedMethods, this.generatorInstances));
-  }
-
   get logger() {
     return this.options.logger;
   }
@@ -128,19 +122,14 @@ class Macrome {
     for (const stub of this.generatorStubs.get(generatorPath)) {
       const { parser, parseOptions, printOptions } = this.options;
       const generator = new Generator(this, {
+        vcsPath: stub.vcsPath,
         parser,
         parseOptions,
         printOptions,
         ...stub.options,
       });
 
-      this.generators.get(generatorPath).push(generator);
-    }
-  }
-
-  pathsChanged() {
-    for (const gen of this.generators) {
-      gen.pathsChanged && gen.pathsChanged();
+      this.generators.get(generatorPath).push({ generator, pathMap: new Map() });
     }
   }
 
@@ -155,21 +144,28 @@ class Macrome {
   }
 
   processChangeset(changes) {
-    let pathsChanged = false;
-
     this.changeset = new Changeset(changes);
 
     for (const change of this.changeset) {
-      for (const generator of this.generatorInstances) {
+      for (const { generator, pathMap } of this.generatorInstances) {
         if (generator.matches(change.path)) {
-          generator.process(change);
+          if (change.operation === REMOVE) {
+            pathMap.delete(change.path);
+          } else {
+            pathMap.set(change.path, {
+              ...change,
+              mapResult: generator.map ? generator.map(change) : change,
+            });
+          }
         }
       }
-
-      pathsChanged = pathsChanged || change.operation !== UPDATE;
     }
 
-    if (pathsChanged) this.pathsChanged();
+    for (const { generator, pathMap } of this.generatorInstances) {
+      if (generator.reduce && pathMap.size) {
+        generator.reduce(pathMap);
+      }
+    }
 
     this.changeset = null;
   }
@@ -210,10 +206,6 @@ class Macrome {
     const initialPaths = await traverse(this.projectRoot, { ignored });
 
     this.initialProcess(map((path) => ({ path, operation: ADD }), initialPaths));
-
-    for (const debounced of this.debouncedMethods) {
-      debounced.flush();
-    }
   }
 
   async watch() {

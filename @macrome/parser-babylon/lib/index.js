@@ -9,6 +9,18 @@ function isMacromeComment(node) {
   return node.type === 'CommentBlock' && node.leading && /\s*@macrome/.test(node.value);
 }
 
+function renderAnnotation([key, value]) {
+  return `@${key}${value === true ? '' : ` ${value}`}`;
+}
+
+function getProgram(ast) {
+  const program = ast.type === 'File' ? ast.program : ast;
+  if (program.type !== 'Program') {
+    throw new Error(`decorate expects a File or Program ast node but received ${ast.type}`);
+  }
+  return program;
+}
+
 const parser = {
   parse(content, options) {
     return recast.parse(content, {
@@ -32,7 +44,7 @@ const parser = {
   },
 
   stripHeader(ast) {
-    const { program } = ast;
+    const program = getProgram(ast);
     if (
       program.body[0] &&
       program.body[0].comments &&
@@ -46,11 +58,11 @@ const parser = {
   },
 
   prependHeader(ast, annotations, commentLines) {
+    const program = getProgram(ast);
     const annotationLines = Object.entries(annotations).map(
-      ([key, value], i) => `${i > 0 ? ' *' : ''} @${key}${value === true ? '' : ` ${value}`}`,
+      (ann, i) => `${i > 0 ? ' *' : ''} ${renderAnnotation(ann)}`,
     );
 
-    const { program } = ast;
     // prettier-ignore
     const value = `${annotationLines.join('\n')}\n${commentLines.map(l => ` * ${l}`).join('\n')}\n `;
 
