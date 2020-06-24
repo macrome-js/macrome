@@ -120,12 +120,10 @@ class Macrome {
     this.generators.set(generatorPath, []);
 
     for (const stub of this.generatorStubs.get(generatorPath)) {
-      const { parser, parseOptions, printOptions } = this.options;
+      const { parser } = this.options;
       const generator = new Generator(this, {
         vcsPath: stub.vcsPath,
         parser,
-        parseOptions,
-        printOptions,
         ...stub.options,
       });
 

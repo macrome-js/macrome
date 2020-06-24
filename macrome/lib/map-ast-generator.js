@@ -1,7 +1,5 @@
 'use strict';
 
-// const { EOL } = require('os');
-
 const { Generator } = require('./generator');
 const operations = require('./operations');
 

@@ -2,7 +2,6 @@
 
 const fs = require('fs');
 const { relative, dirname } = require('path');
-// const { EOL } = require('os');
 
 const { Matchable } = require('./matchable');
 const operations = require('./operations');
@@ -51,11 +50,11 @@ class Generator extends Matchable {
   }
 
   parse(content) {
-    return this.parser.parse(content, this.options.parseOptions);
+    return this.parser.parse(content);
   }
 
   print(ast) {
-    return this.parser.print(ast, this.options.printOptions);
+    return this.parser.print(ast);
   }
 
   generateError(e) {
