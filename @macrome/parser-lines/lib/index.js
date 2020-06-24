@@ -2,31 +2,42 @@ function renderAnnotation([key, value]) {
   return `@${key}${value === true ? '' : ` ${value}`}`;
 }
 
-const parser = {
-  // configurability:
-  // comment symbol
-  // trailing newline?
+class MacromeParserLines {
+  constructor(options = {}) {
+    this.options = {
+      commentToken: '#',
+      addTrailingNewline: true,
+      EOL: '\n',
+      ...options,
+    };
+  }
 
   parse(content) {
+    // Strip UTF8 BOM if present
+    if (content.charCodeAt(0) === 0xfeff) content = content.slice(1);
     return content.split(/\r?\n/);
-  },
+  }
 
-  print(lines, options) {
-    return lines.join('\n');
-  },
+  print(lines) {
+    const { addTrailingNewline, EOL } = this.options;
+    return `${lines.join(EOL)}${addTrailingNewline ? EOL : ''}`;
+  }
 
-  generateError(error, options) {
+  generateError(error) {
     return this.parse(error.stack);
-  },
+  }
 
   stripHeader(lines) {
+    const { commentToken } = this.options;
     let macromeLinesCount = 0;
-    if (lines[0] === '# @macrome') {
-      const lastCommentLine = lines.findIndex((line) => !lines.startsWith('#') || line === '#');
-      if (lines[lastCommentLine] === '#') macromeLinesCount = lastCommentLine;
+    if (lines[0] === `${commentToken} @macrome`) {
+      const lastCommentLine = lines.findIndex(
+        (line) => !lines.startsWith(commentToken) || line === commentToken,
+      );
+      if (lines[lastCommentLine] === commentToken) macromeLinesCount = lastCommentLine;
     }
     lines.splice(0, macromeLinesCount);
-  },
+  }
 
   prependHeader(lines, annotations, commentLines) {
     lines.splice(
@@ -36,7 +47,7 @@ const parser = {
       ...commentLines.map((line) => `# ${line}`),
       '#',
     );
-  },
-};
+  }
+}
 
-module.exports = parser;
+module.exports = MacromeParserLines;

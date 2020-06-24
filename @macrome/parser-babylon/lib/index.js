@@ -21,27 +21,36 @@ function getProgram(ast) {
   return program;
 }
 
-const parser = {
-  parse(content, options) {
+class MacromeParserBabylon {
+  constructor(options = {}) {
+    this.options = {
+      parseOptions: {
+        ...options.parseOptions,
+        tokens: true,
+      },
+      printOptions: {
+        ...options.printOptions,
+      },
+    };
+  }
+
+  parse(content) {
     return recast.parse(content, {
       parser: {
-        parse(source) {
-          return babylon.parse(source, {
-            ...options,
-            tokens: true,
-          });
+        parse: (source) => {
+          return babylon.parse(source, this.options.parseOptions);
         },
       },
     });
-  },
+  }
 
-  print(ast, options) {
-    return recast.print(ast, options);
-  },
+  print(ast) {
+    return recast.print(ast, this.options.printOptions);
+  }
 
-  generateError(error, options) {
-    return this.parse(errorTemplate(error), options);
-  },
+  generateError(error) {
+    return this.parse(errorTemplate(error));
+  }
 
   stripHeader(ast) {
     const program = getProgram(ast);
@@ -55,7 +64,7 @@ const parser = {
       // program has no body -- comments only
       program.comments.splice(0, 1);
     }
-  },
+  }
 
   prependHeader(ast, annotations, commentLines) {
     const program = getProgram(ast);
@@ -68,7 +77,7 @@ const parser = {
 
     if (!program.comments) program.comments = [];
     program.comments.unshift({ type: 'CommentBlock', value, leading: true, trailing: false });
-  },
-};
+  }
+}
 
-module.exports = parser;
+module.exports = MacromeParserBabylon;
