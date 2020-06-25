@@ -6,8 +6,8 @@ const operations = require('./operations');
 const { REMOVE } = operations;
 
 class MapAstGenerator extends Generator {
-  constructor(macrome, options) {
-    super(macrome, options);
+  constructor(api, options) {
+    super(api, options);
     if (!this.options.parser) {
       throw new Error('Generator instantiated without options.parser');
     }
@@ -66,6 +66,10 @@ class MapAstGenerator extends Generator {
       try {
         this.write(destPath, content);
       } catch (e) {
+        if (result instanceof Error) {
+          // We were going to write the error to the file, but that failed so log it
+          this.logger.error(result.stack);
+        }
         this.logger.error(`Failed writing ${isError ? 'error ' : ''}to ${destPath}`);
         throw e;
       }

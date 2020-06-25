@@ -9,6 +9,7 @@ const { traverse } = require('./traverse');
 const { MacromeWatchmanClient } = require('./watchman');
 const { Changeset } = require('./changeset');
 const { concat, filter, map, groupBy } = require('./utils/functional');
+const { bindAll } = require('./utils/bind');
 
 const { ADD, REMOVE, UPDATE } = require('./operations');
 const { isGeneratedFromTemplate } = require('./comments');
@@ -92,10 +93,13 @@ class Macrome {
           options = {};
         }
 
+        const { logger, generatedPaths, resolve, write, unlink } = this;
+        const api = bindAll({ logger, generatedPaths, resolve, write, unlink }, this);
+
         const resolvedPath = require.resolve(path, { paths: [this.projectRoot] });
         const vcsPath = path.startsWith('.') ? relative(this.vcsRoot, resolvedPath) : path;
 
-        return { options, path, resolvedPath, vcsPath };
+        return { options, api, path, resolvedPath, vcsPath };
       }),
     );
 
@@ -121,7 +125,7 @@ class Macrome {
 
     for (const stub of this.generatorStubs.get(generatorPath)) {
       const { parser } = this.options;
-      const generator = new Generator(this, {
+      const generator = new Generator(stub.api, {
         vcsPath: stub.vcsPath,
         parser,
         ...stub.options,
