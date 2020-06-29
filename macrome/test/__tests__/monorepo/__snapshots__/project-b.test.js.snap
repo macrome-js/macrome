@@ -1,7 +1,0 @@
-// Jest Snapshot v1, https://goo.gl/fbAQLP
-
-exports[`monorepo project b cleans 1`] = `
-Array [
-  " D lib/generated-project-b.js",
-]
-`;

@@ -1,6 +1,6 @@
 module.exports = {
   extends: ['standard', 'prettier', 'plugin:node/recommended'],
-  plugins: ['jest'],
+  plugins: ['jest', 'import'],
   parserOptions: {
     ecmaVersion: 2018,
     sourceType: 'module',

@@ -3,7 +3,8 @@ node_modules
 *.lerna_backup
 /*/**/.git
 
-/@macrome/*/coverage
-/macrome/coverage
+/coverage
 
 /report.*
+
+yarn-*.log

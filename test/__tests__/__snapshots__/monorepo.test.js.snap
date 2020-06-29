@@ -1,0 +1,27 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`monorepo project a cleans 1`] = `
+Array [
+  " D lib/generated-project-a.js",
+]
+`;
+
+exports[`monorepo project b cleans 1`] = `
+Array [
+  " D lib/generated-project-b.js",
+]
+`;
+
+exports[`monorepo projects a and b watch 1`] = `
+Array [
+  " D project-a/lib/project-a.js",
+  " D project-b/lib/project-b.js",
+]
+`;
+
+exports[`monorepo projects a and b watch 2`] = `
+Array [
+  " M project-a/lib/project-a.js",
+  " M project-b/lib/project-b.js",
+]
+`;

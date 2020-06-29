@@ -1,12 +1,12 @@
 # Macromé
 
-Macromé (pronounced macro-may) is a build tool designed for generating files which will be checked into source control. This differs from existing build systems like grunt, gulp, or broccoli, all of which are designed to generate built outputs which will not be checked in.
+Macrome is the in-place build system for engineers who like to see what's really happening.
 
-**Macromé is not intended to replace other existing build systems**. It is intended to supplement them. You won't find plugins for compiling to CSS or es5, or bundling assets. You should still use another build system for those tasks.
+**Macrome is not intended to replace other existing build systems**. It is intended to supplement them. You won't find plugins for compiling to CSS or es5, or bundling assets. You should still use another build system for those tasks.
 
-Nothing about Macromé is specific to Javascript, but it is expected to be used mostly on Javascript projects, particularly in combination with the excellent `babel-plugin-macros`.
+Nothing about Macrome is specific to Javascript, but it is expected to be used mostly on Javascript projects, particularly in combination with the excellent `babel-plugin-macros`.
 
-Macromé is designed to run either in a CI environment (so you can verify that no assets are stale), or locally. When running locally Macromé can watch your files for changes if you have [watchman](http://facebook.github.io/watchman/docs/install) installed.
+Macrome is designed to run either in a CI environment (so you can verify that no assets are stale), or locally. When running locally Macrome can watch your files for changes if you have [watchman](http://facebook.github.io/watchman/docs/install) installed.
 
 ## Usage
 
@@ -44,7 +44,41 @@ macrome.build();
 macrome.watch();
 ```
 
-## Why would I need Macromé?
+## Generators
+
+Macrome generators are expected to (though not required to) extende the [Generator](https://github.com/conartist6/macrome/blob/trunk/macrome/lib/generator.js) base class.
+
+Hooks such as `map` and `reduce` are required to have synchronous implementations, though this restriction is likely to be removed in the future.
+
+You should limit yourself to using the built in methods for alterting the filesystem, most importantly `this.write()` and `this.unlink()` as these give Macrome the opportunity to update its internal state.
+
+```js
+class ConcatGenerator extends Generator {
+  constructor(api, options) {
+    super(api, options);
+
+    // These globs are evaluated with micromatch.
+    // Each glob may be a string or an array of strings.
+    // If an array is given, the file is included if any glob in the array matches.
+    this.included = ['**/*.js'];
+    this.ignored = ['dist/**'];
+  }
+
+  /**
+   * The map hook is called if it exists.
+   * `operation` may be "ADD", "REMOVE", or "UPDATE"
+   */
+  map({ path, operation }) {
+    if (operation === 'REMOVE') {
+      this.unlink(path);
+    } else {
+      return this.read(path);
+    }
+  }
+}
+```
+
+## Why would I need Macrome?
 
 Macros are a time-tested and potentially highly useful technique, but they come with certain problems. Most importantly they complicate the history of the codebase because the macros-applied code, suitable for execution and static analysis, isn't usually under source control. This means you can no longer read past code unless you understand the historical definition of any macros.
 
