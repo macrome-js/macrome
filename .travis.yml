@@ -7,9 +7,6 @@ addons:
 
 language: node_js
 node_js:
-  - '10'
+  - '12'
 
-before_script:
-  - npx lerna bootstrap
-
-script: npm run verify
+script: yarn test
