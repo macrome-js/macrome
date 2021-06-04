@@ -2,7 +2,7 @@ const { resolve } = require('path');
 const { testProject } = require('./test-project');
 const { gitStatus, isClean } = require('./utils');
 
-const { writeFile, readFile, unlink } = require('fs/promises');
+const { writeFile, readFile, unlink } = require('fs').promises;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
