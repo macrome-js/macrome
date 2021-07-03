@@ -36,6 +36,7 @@
     "git-state": "^4.1.0",
     "ignore": "^5.1.4",
     "import-fresh": "^3.2.1",
+    "invariant": "^2.2.4",
     "iter-tools-es": "^7.0.2",
     "jest-cli": "^26.0.1",
     "loglevel": "^1.6.2",
