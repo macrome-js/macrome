@@ -1,13 +1,10 @@
-const { resolve } = require('path');
 const { testProject } = require('./test-project');
-const { gitStatus, isClean } = require('./utils');
+const { sandboxPath, gitStatus, eventually } = require('./utils');
 
 const { writeFile, readFile, unlink } = require('fs').promises;
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 describe('simple project', () => {
-  const test = testProject(resolve(__dirname, '../sandbox/projects/simple-project'));
+  const test = testProject(sandboxPath('projects/simple-project'));
 
   describe('watch', () => {
     test.watchSetup();
@@ -17,19 +14,32 @@ describe('simple project', () => {
       const originalContent = await readFile(filePath, 'utf8');
 
       await unlink(filePath);
-      await sleep(100);
 
-      expect(gitStatus()).toMatchSnapshot();
+      await eventually(() => {
+        expect(gitStatus()).toMatchInlineSnapshot(`
+          Array [
+            " D lib/generated-simple-project.js",
+            " D lib/simple-project.js",
+          ]
+        `);
+      });
 
       await writeFile(filePath, originalContent + '\n');
-      await sleep(100);
 
-      expect(gitStatus()).toMatchSnapshot();
+      await eventually(() => {
+        expect(gitStatus()).toMatchInlineSnapshot(`
+          Array [
+            " M lib/generated-simple-project.js",
+            " M lib/simple-project.js",
+          ]
+        `);
+      });
 
       await writeFile(filePath, originalContent);
-      await sleep(100);
 
-      expect(isClean('.')).toBe(true);
+      await eventually(() => {
+        expect(gitStatus()).toMatchInlineSnapshot(`Array []`);
+      });
     });
   });
 });

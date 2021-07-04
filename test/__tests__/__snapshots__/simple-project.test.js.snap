@@ -5,17 +5,3 @@ Array [
   " D lib/generated-simple-project.js",
 ]
 `;
-
-exports[`simple project watch simple-project.js 1`] = `
-Array [
-  " D lib/generated-simple-project.js",
-  " D lib/simple-project.js",
-]
-`;
-
-exports[`simple project watch simple-project.js 2`] = `
-Array [
-  " M lib/generated-simple-project.js",
-  " M lib/simple-project.js",
-]
-`;
