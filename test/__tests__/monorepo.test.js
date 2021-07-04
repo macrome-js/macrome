@@ -1,12 +1,10 @@
-const { resolve } = require('path');
 const { testProject } = require('./test-project');
-const { gitStatus, isClean, sleep } = require('./utils');
+const { sandboxPath, gitStatus, eventually } = require('./utils');
 
 const { writeFile, readFile, unlink } = require('fs').promises;
 
 describe('monorepo', () => {
   let testA, testB;
-  const sandboxPath = (path) => resolve(__dirname, '../sandbox', path);
 
   describe('project a', () => {
     testA = testProject(sandboxPath('projects/monorepo/project-a'));
@@ -31,19 +29,36 @@ describe('monorepo', () => {
       const bContent = await readFile(bPath, 'utf8');
 
       await Promise.all([unlink(aPath), unlink(bPath)]);
-      await sleep(100);
 
-      expect(gitStatus()).toMatchSnapshot();
+      await eventually(() =>
+        expect(gitStatus()).toMatchInlineSnapshot(`
+          Array [
+            " D project-a/lib/generated-project-a.js",
+            " D project-a/lib/project-a.js",
+            " D project-b/lib/generated-project-b.js",
+            " D project-b/lib/project-b.js",
+          ]
+        `),
+      );
 
       await Promise.all([writeFile(aPath, aContent + '\n'), writeFile(bPath, bContent + '\n')]);
-      await sleep(100);
 
-      expect(gitStatus()).toMatchSnapshot();
+      await eventually(() => {
+        expect(gitStatus()).toMatchInlineSnapshot(`
+          Array [
+            " M project-a/lib/generated-project-a.js",
+            " M project-a/lib/project-a.js",
+            " M project-b/lib/generated-project-b.js",
+            " M project-b/lib/project-b.js",
+          ]
+        `);
+      });
 
       await Promise.all([writeFile(aPath, aContent), writeFile(bPath, bContent)]);
-      await sleep(100);
 
-      expect(isClean('.')).toBe(true);
+      await eventually(() => {
+        expect(gitStatus()).toMatchInlineSnapshot(`Array []`);
+      });
     });
   });
 });
