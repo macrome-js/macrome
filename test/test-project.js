@@ -1,4 +1,4 @@
-const { Macrome } = require('../../lib');
+const { Macrome } = require('../lib');
 const { run, isClean, gitStatus } = require('./utils');
 
 function testProject(projectRoot) {

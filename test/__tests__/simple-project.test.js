@@ -1,5 +1,5 @@
-const { testProject } = require('./test-project');
-const { sandboxPath, gitStatus, eventually } = require('./utils');
+const { testProject } = require('../test-project');
+const { sandboxPath, gitStatus, eventually } = require('../utils');
 
 const { writeFile, readFile, unlink } = require('fs').promises;
 

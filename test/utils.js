@@ -1,7 +1,7 @@
 const { resolve } = require('path');
 const stripAnsi = require('strip-ansi');
 
-const { run, hasOutput, outputLines } = require('../../lib/utils/shell');
+const { run, hasOutput, outputLines } = require('../lib/utils/shell');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -16,7 +16,7 @@ function gitStatus() {
     .sort();
 }
 
-const sandboxPath = (path) => resolve(__dirname, '../sandbox', path);
+const sandboxPath = (path) => resolve(__dirname, 'sandbox', path);
 
 async function eventually(cb, ms = 500, max = 8) {
   for (let i = 0; i < max; i++) {
