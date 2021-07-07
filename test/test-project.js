@@ -1,3 +1,4 @@
+const { writeFile, unlink } = require('fs').promises;
 const { Macrome } = require('../lib');
 const { run, isClean, gitStatus } = require('./utils');
 
@@ -35,6 +36,24 @@ function testProject(projectRoot) {
     const clean = await macrome.check();
 
     expect(clean).toBe(true);
+  });
+
+  describe('when stale files are present', () => {
+    beforeEach(async () => {
+      await writeFile(macrome.resolve('lib/spurious.js'), '/* @macrome */');
+    });
+
+    afterEach(async () => {
+      await unlink(macrome.resolve('lib/spurious.js')).catch(() => {});
+    });
+
+    it('removes them', async () => {
+      expect(isClean('.')).toBe(false);
+
+      await macrome.build();
+
+      expect(isClean('.')).toBe(true);
+    });
   });
 
   return {
