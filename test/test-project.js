@@ -1,34 +1,43 @@
 const { Macrome } = require('../lib');
-const { run, isClean, gitStatus } = require('./utils');
+const { run, gitStatus, gitDiff } = require('./utils');
+
+function cleanProject(projectRoot) {
+  run('git', ['add', projectRoot]);
+  run('git', ['checkout', 'HEAD', '--', projectRoot]);
+}
+
+function inDir(dir, cb) {
+  const dir_ = process.cwd();
+  process.chdir(dir);
+  cb();
+  process.chdir(dir_);
+}
 
 function testProject(projectRoot) {
   let macrome;
 
   beforeAll(async () => {
-    process.chdir(projectRoot);
+    cleanProject(projectRoot);
 
-    if (!isClean('.')) {
-      throw new Error('Test directory was not clean');
-    }
-
-    macrome = new Macrome({ quiet: true });
+    inDir(projectRoot, () => {
+      macrome = new Macrome({ quiet: true });
+    });
   });
 
   afterAll(async () => {
-    run('git', ['add', '.']);
-    run('git', ['checkout', 'HEAD', '--', projectRoot]);
+    cleanProject(projectRoot);
   });
 
   it('cleans', async () => {
     await macrome.clean();
 
-    expect(gitStatus()).toMatchSnapshot();
+    expect(gitStatus(projectRoot)).toMatchSnapshot();
   });
 
   it('builds', async () => {
     await macrome.build();
 
-    expect(isClean('.')).toBe(true);
+    expect(gitDiff(projectRoot)).toMatchSnapshot();
   });
 
   it('checks', async () => {

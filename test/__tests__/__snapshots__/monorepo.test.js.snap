@@ -1,10 +1,14 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
+exports[`monorepo project a builds 1`] = `""`;
+
 exports[`monorepo project a cleans 1`] = `
 Array [
   " D lib/generated-project-a.js",
 ]
 `;
+
+exports[`monorepo project b builds 1`] = `""`;
 
 exports[`monorepo project b cleans 1`] = `
 Array [

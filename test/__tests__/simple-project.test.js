@@ -1,22 +1,24 @@
+const { resolve } = require('path');
+const { writeFile, readFile, unlink } = require('fs').promises;
+
 const { testProject } = require('../test-project');
 const { sandboxPath, gitStatus, eventually } = require('../utils');
 
-const { writeFile, readFile, unlink } = require('fs').promises;
-
 describe('simple project', () => {
-  const test = testProject(sandboxPath('projects/simple-project'));
+  const projectPath = sandboxPath('projects/simple-project');
+  const test = testProject(projectPath);
 
   describe('watch', () => {
     test.watchSetup();
 
     it('simple-project.js', async () => {
-      const filePath = 'lib/simple-project.js';
+      const filePath = resolve(projectPath, 'lib/simple-project.js');
       const originalContent = await readFile(filePath, 'utf8');
 
       await unlink(filePath);
 
       await eventually(() => {
-        expect(gitStatus()).toMatchInlineSnapshot(`
+        expect(gitStatus(projectPath)).toMatchInlineSnapshot(`
           Array [
             " D lib/generated-simple-project.js",
             " D lib/simple-project.js",
@@ -27,7 +29,7 @@ describe('simple project', () => {
       await writeFile(filePath, originalContent + '\n');
 
       await eventually(() => {
-        expect(gitStatus()).toMatchInlineSnapshot(`
+        expect(gitStatus(projectPath)).toMatchInlineSnapshot(`
           Array [
             " M lib/generated-simple-project.js",
             " M lib/simple-project.js",
@@ -38,7 +40,7 @@ describe('simple project', () => {
       await writeFile(filePath, originalContent);
 
       await eventually(() => {
-        expect(gitStatus()).toMatchInlineSnapshot(`Array []`);
+        expect(gitStatus(projectPath)).toMatchInlineSnapshot(`Array []`);
       });
     });
   });

@@ -1,22 +1,28 @@
-const { resolve } = require('path');
 const stripAnsi = require('strip-ansi');
 
 const { run, hasOutput, outputLines } = require('../lib/utils/shell');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function isClean(dir) {
-  return !hasOutput('git', ['status', '-s', dir]);
+function isClean(path) {
+  return !hasOutput('git', ['status', '-s', '.'], path);
 }
 
-function gitStatus() {
-  return outputLines('git', ['status', '-s', '.'])
+function gitStatus(path) {
+  return outputLines('git', ['status', '-s', '.'], path)
     .map((line) => stripAnsi(line))
     .slice(0, -1)
     .sort();
 }
 
-const sandboxPath = (path) => resolve(__dirname, 'sandbox', path);
+function gitDiff(path) {
+  return outputLines('git', ['diff', '-U0', '--relative', 'HEAD', '.'], path)
+    .map((line) => stripAnsi(line))
+    .slice(3)
+    .join('\n');
+}
+
+const sandboxPath = (path) => `test/sandbox/${path}`;
 
 async function eventually(cb, ms = 500, max = 8) {
   for (let i = 0; i < max; i++) {
@@ -43,4 +49,5 @@ module.exports = {
   eventually,
   isClean,
   gitStatus,
+  gitDiff,
 };
