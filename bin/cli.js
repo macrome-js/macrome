@@ -6,7 +6,7 @@
 const parseArgs = require('minimist');
 const camelize = require('camelize');
 
-const { Macrome } = require('./macrome');
+const { Macrome } = require('../lib/macrome');
 
 const argv = camelize(
   parseArgs(process.argv.slice(2), {
