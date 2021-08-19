@@ -1,4 +1,5 @@
 **/node_modules
 /.git
+/lib/**/*.js
 
 !.eslintrc.js

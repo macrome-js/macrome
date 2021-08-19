@@ -2,7 +2,7 @@ module.exports = {
   setupFiles: ['<rootDir>/test/test-setup'],
   transform: {},
   restoreMocks: true,
-  testMatch: ['**/?(*.)+(spec|test).[jt]s?(x)'],
+  testMatch: ['**/*.test.js'],
   moduleNameMapper: {
     '^macrome$': '<rootDir>',
   },
