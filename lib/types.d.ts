@@ -53,11 +53,11 @@ export interface Generator<T> extends Matchable {
   // eslint-disable-next-line @typescript-eslint/no-misused-new
   new (options: Record<string, any>): Generator<T>;
 
-  initialize(api: GeneratorApi): Promise<unknown>;
+  initialize?(api: GeneratorApi): Promise<unknown>;
 
-  map(api: MapChangeApi, change: Change): Promise<T>;
+  map?(api: MapChangeApi, change: Change): Promise<T>;
 
-  reduce(api: GeneratorApi, changeMap: Map<string, T>): Promise<unknown>;
+  reduce?(api: GeneratorApi, changeMap: Map<string, T>): Promise<unknown>;
 
-  destroy(api: GeneratorApi): Promise<unknown>;
+  destroy?(api: GeneratorApi): Promise<unknown>;
 }

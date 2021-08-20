@@ -29,6 +29,7 @@ type GeneratorStub = {
 
 export class Macrome {
   options: BuiltOptions;
+  initialized: boolean;
   root: string;
   watchRoot: string;
   api: Api;
@@ -64,6 +65,7 @@ export class Macrome {
       },
     );
 
+    this.initialized = false;
     this.root = root;
     this.watchRoot = dirname(vcsDir || root);
     this.api = new Api(this);
@@ -93,10 +95,13 @@ export class Macrome {
       // we do not yet have types for which more than one accessor may be valid
       flatMap((axr) => map((type) => [type, axr], axr.supportedFileTypes), accessors),
     );
+  }
 
+  private async initialize() {
     for (const generatorPath of this.generatorStubs.keys()) {
-      this.instantiateGenerators(generatorPath);
+      await this.instantiateGenerators(generatorPath);
     }
+    this.initialized = true;
   }
 
   private get generatorInstances() {
@@ -107,11 +112,12 @@ export class Macrome {
     return logger;
   }
 
-  instantiateGenerators(generatorPath: string): void {
+  async instantiateGenerators(generatorPath: string): Promise<void> {
     const Generator: Generator<unknown> = requireFresh(generatorPath);
 
     if (this.generators.has(generatorPath)) {
-      for (const { api } of this.generators.get(generatorPath)!) {
+      for (const { api, generator } of this.generators.get(generatorPath)!) {
+        await generator.destroy?.(api);
         api.destroy();
       }
     }
@@ -125,6 +131,8 @@ export class Macrome {
       const paths = new Map();
       const generator = new Generator(stub.options);
       const api = GeneratorApi.fromApi(this.api, this.relative(generatorPath));
+
+      await generator.initialize?.(api);
 
       this.generators.get(generatorPath)!.push({ generator, api, vcsPath, paths });
     }
@@ -199,6 +207,8 @@ export class Macrome {
 
   async build(): Promise<void> {
     const { alwaysIgnored: ignored } = this.options;
+
+    if (!this.initialized) await this.initialize();
 
     const initialPaths = [
       ...filter(

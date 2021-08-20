@@ -12,6 +12,7 @@ declare type GeneratorStub = {
 };
 export declare class Macrome {
     options: BuiltOptions;
+    initialized: boolean;
     root: string;
     watchRoot: string;
     api: Api;
@@ -30,9 +31,10 @@ export declare class Macrome {
     changesets: Map<string, Changeset>;
     accessorsByFileType: Map<string, Accessor>;
     constructor(apiOptions: Options);
+    private initialize;
     private get generatorInstances();
     get logger(): any;
-    instantiateGenerators(generatorPath: string): void;
+    instantiateGenerators(generatorPath: string): Promise<void>;
     accessorFor(path: string): Accessor | null;
     processChanges(rootChanges: Array<Change>): Promise<void>;
     build(): Promise<void>;
