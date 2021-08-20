@@ -9,7 +9,6 @@ import { WatchmanClient, expressionFromMatchable } from './watchman';
 import { Api, GeneratorApi, MapChangeApi } from './apis';
 import { Changeset } from './changeset';
 import { matches } from './matchable';
-import { groupBy } from './utils/map';
 import { logger } from './utils/logger';
 import { buildOptions, Options, BuiltOptions } from './config';
 
@@ -20,13 +19,6 @@ import { Accessor, Generator, Change } from './types';
 
 const { unlink } = fsPromises;
 
-type GeneratorStub = {
-  options: Record<string, any>;
-  path: string;
-  resolvedPath: string;
-  vcsPath: string;
-};
-
 export class Macrome {
   options: BuiltOptions;
   initialized: boolean;
@@ -35,13 +27,11 @@ export class Macrome {
   api: Api;
   vcsConfig: VCSConfig | null;
   watchClient: WatchmanClient | null;
-  generatorStubs: Map<string, Array<GeneratorStub>>;
   generators: Map<
     string,
     Array<{
       generator: Generator<unknown>;
       api: GeneratorApi;
-      vcsPath: string;
       paths: Map<string, { change: Change; mapResult: unknown }>;
     }>
   >;
@@ -81,16 +71,6 @@ export class Macrome {
       this.vcsConfig = vcsConfig;
     }
 
-    const stubs = options.generators.map(([path, options]) => {
-      const _options = { ...options, logger };
-      const resolvedPath = require.resolve(path, { paths: [this.root] });
-      const vcsPath = path.startsWith('.') ? relative(this.watchRoot, resolvedPath) : path;
-
-      return { options: _options, path, resolvedPath, vcsPath };
-    });
-
-    this.generatorStubs = groupBy((stub) => stub.resolvedPath, stubs);
-
     this.accessorsByFileType = new Map(
       // we do not yet have types for which more than one accessor may be valid
       flatMap((axr) => map((type) => [type, axr], axr.supportedFileTypes), accessors),
@@ -98,7 +78,7 @@ export class Macrome {
   }
 
   private async initialize() {
-    for (const generatorPath of this.generatorStubs.keys()) {
+    for (const generatorPath of this.options.generators.keys()) {
       await this.instantiateGenerators(generatorPath);
     }
     this.initialized = true;
@@ -124,17 +104,16 @@ export class Macrome {
 
     this.generators.set(generatorPath, []);
 
-    const stubs = this.generatorStubs.get(generatorPath)!;
+    const stubs = this.options.generators.get(generatorPath)!;
 
     for (const stub of stubs) {
-      const { vcsPath } = stub;
       const paths = new Map();
       const generator = new Generator(stub.options);
       const api = GeneratorApi.fromApi(this.api, this.relative(generatorPath));
 
       await generator.initialize?.(api);
 
-      this.generators.get(generatorPath)!.push({ generator, api, vcsPath, paths });
+      this.generators.get(generatorPath)!.push({ generator, api, paths });
     }
   }
 

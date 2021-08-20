@@ -4,12 +4,6 @@ import { Changeset } from './changeset';
 import { Options, BuiltOptions } from './config';
 import { VCSConfig } from './vcs-configs';
 import { Accessor, Generator, Change } from './types';
-declare type GeneratorStub = {
-    options: Record<string, any>;
-    path: string;
-    resolvedPath: string;
-    vcsPath: string;
-};
 export declare class Macrome {
     options: BuiltOptions;
     initialized: boolean;
@@ -18,11 +12,9 @@ export declare class Macrome {
     api: Api;
     vcsConfig: VCSConfig | null;
     watchClient: WatchmanClient | null;
-    generatorStubs: Map<string, Array<GeneratorStub>>;
     generators: Map<string, Array<{
         generator: Generator<unknown>;
         api: GeneratorApi;
-        vcsPath: string;
         paths: Map<string, {
             change: Change;
             mapResult: unknown;
@@ -46,4 +38,3 @@ export declare class Macrome {
     relative(path: string): string;
     resolve(path: string): string;
 }
-export {};
