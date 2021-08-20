@@ -1,4 +1,5 @@
 import { WatchmanClient } from './watchman';
+import { Api, GeneratorApi } from './apis';
 import { Changeset } from './changeset';
 import { Options, BuiltOptions } from './config';
 import { VCSConfig } from './vcs-configs';
@@ -10,13 +11,16 @@ declare type GeneratorStub = {
     vcsPath: string;
 };
 export declare class Macrome {
-    vcsConfig: VCSConfig | null;
-    watchRoot: string;
     options: BuiltOptions;
     root: string;
+    watchRoot: string;
+    api: Api;
+    vcsConfig: VCSConfig | null;
+    watchClient: WatchmanClient | null;
     generatorStubs: Map<string, Array<GeneratorStub>>;
     generators: Map<string, Array<{
         generator: Generator<unknown>;
+        api: GeneratorApi;
         vcsPath: string;
         paths: Map<string, {
             change: Change;
@@ -24,7 +28,6 @@ export declare class Macrome {
         }>;
     }>>;
     changesets: Map<string, Changeset>;
-    watchClient: WatchmanClient | null;
     accessorsByFileType: Map<string, Accessor>;
     constructor(apiOptions: Options);
     private get generatorInstances();

@@ -1,5 +1,5 @@
 import type { Macrome } from './macrome';
-import type { WriteOptions, ReadOptions, Accessor } from './types';
+import type { WriteOptions, ReadOptions, Accessor, File } from './types';
 import type { Changeset } from './changeset';
 
 import { relative, dirname } from 'path';
@@ -11,40 +11,41 @@ const _ = Symbol.for('private members');
 
 type ApiProtected = {
   destroyed: boolean;
+  macrome: Macrome;
 };
 
-class Api {
-  protected [_]: {
-    destroyed: boolean;
-  };
+class ApiError extends Error {
+  verb: string;
 
-  constructor() {
-    this[_] = { destroyed: false };
+  constructor(message: string, verb: string) {
+    super(message);
+    this.verb = verb;
+  }
+}
+
+export class Api {
+  protected [_]: ApiProtected;
+
+  constructor(macrome: Macrome) {
+    this[_] = { macrome, destroyed: false };
   }
 
-  __assertNotDestroyed(methodName: string) {
+  protected __assertNotDestroyed(methodName: string): void {
     if (this[_].destroyed) {
       throw new Error(`api.${methodName} cannot be called outside the hook providing the api`);
     }
   }
 
-  __destroy() {
+  destroy(): void {
     this[_].destroyed = true;
   }
-}
 
-type StaticApiProtected = ApiProtected & {
-  macrome: Macrome;
-  generatorPath: string;
-};
+  protected decorateError(error: Error, verb: string): Error {
+    return new ApiError(error.message, verb);
+  }
 
-export class StaticApi extends Api {
-  protected [_]: StaticApiProtected;
-
-  constructor(macrome: Macrome, generatorPath: string) {
-    super();
-    this[_].macrome = macrome;
-    this[_].generatorPath = generatorPath;
+  getAnnotations(_destPath?: string): Map<string, any> {
+    return new Map<string, any>([['macrome', true]]);
   }
 
   resolve(path: string): string {
@@ -55,61 +56,95 @@ export class StaticApi extends Api {
     return this[_].macrome.accessorFor(path);
   }
 
-  getAnnotations(_destPath: string): Map<string, any> {
-    const { generatorPath } = this[_];
-
-    return new Map<string, any>([
-      ['macrome', true],
-      ['generated-by', generatorPath],
-    ]);
-  }
-
   async read(path: string, options: ReadOptions): Promise<string> {
+    this.__assertNotDestroyed('read');
+
     const { encoding = 'utf8', ..._options } = buildReadOptions(options);
     const accessor = this.accessorFor(path)!;
-    const result = await accessor.read(this.resolve(path), { encoding, ..._options });
 
-    return result.content;
+    try {
+      const result = await accessor.read(this.resolve(path), { encoding, ..._options });
+
+      return result.content;
+    } catch (e) {
+      throw this.decorateError(e, 'read');
+    }
   }
 
   async write(path: string, content: string, options: WriteOptions): Promise<void> {
+    this.__assertNotDestroyed('write');
+
     const accessor = this.accessorFor(path)!;
-    await accessor.write(
-      this.resolve(path),
-      {
-        header: {
-          annotations: this.getAnnotations(path),
-        },
-        content,
+    const file: File = {
+      header: {
+        annotations: this.getAnnotations(path),
       },
-      options,
-    );
+      content,
+    };
+    try {
+      await accessor.write(this.resolve(path), file, options);
+    } catch (e) {
+      throw this.decorateError(e, 'write');
+    }
   }
 }
 
-class MapError extends Error {
+type GeneratorApiProtected = ApiProtected & {
   generatorPath: string;
-  verb: string;
+};
+
+export class GeneratorApi extends Api {
+  protected [_]: GeneratorApiProtected;
+
+  constructor(macrome: Macrome, generatorPath: string) {
+    super(macrome);
+    this[_].generatorPath = generatorPath;
+  }
+
+  static fromApi(api: Api, generatorPath: string): GeneratorApi {
+    const { macrome } = api[_];
+    return new GeneratorApi(macrome, generatorPath);
+  }
+
+  getAnnotations(_destPath?: string): Map<string, any> {
+    const { generatorPath } = this[_];
+
+    return new Map<string, any>([...super.getAnnotations(), ['generated-by', `/${generatorPath}`]]);
+  }
+}
+
+class MapApiError extends ApiError {
+  generatorPath: string;
   destPath?: string;
 
-  constructor(message: string, generatorPath: string, verb: string, destPath?: string) {
-    super(message);
+  constructor(message: string, verb: string, generatorPath: string, destPath?: string) {
+    super(message, verb);
     this.generatorPath = generatorPath;
-    this.verb = verb;
     if (destPath) this.destPath = destPath;
   }
 }
 
-type MapChangeApiProtected = StaticApiProtected & {
+type MapChangeApiProtected = GeneratorApiProtected & {
   changeset: Changeset;
 };
 
-export class MapChangeApi extends StaticApi {
+export class MapChangeApi extends GeneratorApi {
   protected [_]: MapChangeApiProtected;
 
   constructor(macrome: Macrome, generatorPath: string, changeset: Changeset) {
     super(macrome, generatorPath);
     this[_].changeset = changeset;
+  }
+
+  static fromGeneratorApi(generatorApi: GeneratorApi, changeset: Changeset): MapChangeApi {
+    const { macrome, generatorPath } = generatorApi[_];
+    return new MapChangeApi(macrome, generatorPath, changeset);
+  }
+
+  protected decorateError(error: Error, verb: string): MapApiError {
+    const { generatorPath } = this[_];
+
+    return new MapApiError(error.message, verb, generatorPath);
   }
 
   getAnnotations(destPath: string): Map<string, any> {
@@ -123,29 +158,14 @@ export class MapChangeApi extends StaticApi {
     ]);
   }
 
-  async read(path: string, options: ReadOptions): Promise<string> {
-    const { generatorPath } = this[_];
-    try {
-      return await super.read(path, options);
-    } catch (e) {
-      throw new MapError(e.message, generatorPath, 'read');
-    }
-  }
-
   async write(path: string, content: string, options: WriteOptions): Promise<void> {
-    const { changeset, generatorPath } = this[_];
+    const { changeset } = this[_];
 
-    this.__assertNotDestroyed('write');
     changeset.add({
       path,
-      // operation: this.changed.has(path) ? UPDATE : ADD,
       operation: UPDATE,
     });
 
-    try {
-      await super.write(path, content, options);
-    } catch (e) {
-      throw new MapError(e.message, generatorPath, 'write');
-    }
+    await super.write(path, content, options);
   }
 }

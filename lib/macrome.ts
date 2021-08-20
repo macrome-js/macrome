@@ -6,7 +6,7 @@ import { map, flat, filter, arrayFromAsync, asyncFilter, asyncMap, flatMap } fro
 
 import { traverse } from './traverse';
 import { WatchmanClient, expressionFromMatchable } from './watchman';
-import { MapChangeApi } from './apis';
+import { Api, GeneratorApi, MapChangeApi } from './apis';
 import { Changeset } from './changeset';
 import { matches } from './matchable';
 import { groupBy } from './utils/map';
@@ -28,23 +28,23 @@ type GeneratorStub = {
 };
 
 export class Macrome {
-  vcsConfig: VCSConfig | null;
-  watchRoot: string;
-
   options: BuiltOptions;
   root: string;
+  watchRoot: string;
+  api: Api;
+  vcsConfig: VCSConfig | null;
+  watchClient: WatchmanClient | null;
   generatorStubs: Map<string, Array<GeneratorStub>>;
   generators: Map<
     string,
     Array<{
       generator: Generator<unknown>;
+      api: GeneratorApi;
       vcsPath: string;
       paths: Map<string, { change: Change; mapResult: unknown }>;
     }>
   >;
   changesets: Map<string, Changeset>;
-  watchClient: WatchmanClient | null;
-
   accessorsByFileType: Map<string, Accessor>;
 
   constructor(apiOptions: Options) {
@@ -66,10 +66,11 @@ export class Macrome {
 
     this.root = root;
     this.watchRoot = dirname(vcsDir || root);
+    this.api = new Api(this);
+    this.vcsConfig = null;
+    this.watchClient = null;
     this.generators = new Map();
     this.changesets = new Map();
-    this.watchClient = null;
-    this.vcsConfig = null;
 
     if (vcsDir) {
       const vcsDirName = basename(vcsDir);
@@ -109,6 +110,12 @@ export class Macrome {
   instantiateGenerators(generatorPath: string): void {
     const Generator: Generator<unknown> = requireFresh(generatorPath);
 
+    if (this.generators.has(generatorPath)) {
+      for (const { api } of this.generators.get(generatorPath)!) {
+        api.destroy();
+      }
+    }
+
     this.generators.set(generatorPath, []);
 
     const stubs = this.generatorStubs.get(generatorPath)!;
@@ -117,8 +124,9 @@ export class Macrome {
       const { vcsPath } = stub;
       const paths = new Map();
       const generator = new Generator(stub.options);
+      const api = GeneratorApi.fromApi(this.api, this.relative(generatorPath));
 
-      this.generators.get(generatorPath)!.push({ generator, vcsPath, paths });
+      this.generators.get(generatorPath)!.push({ generator, api, vcsPath, paths });
     }
   }
 
@@ -165,13 +173,15 @@ export class Macrome {
         // apis expand queue as processing is done
         for (const change of changeset.queue) {
           // Generator loop is inside change queue loop
-          for (const { generator, vcsPath: genPath, paths: genPaths } of this.generatorInstances) {
+          for (const { generator, api: genApi, paths: genPaths } of this.generatorInstances) {
             if (matches(change.path, generator)) {
               // Changes made through this api feed back into the queue
-              const api = new MapChangeApi(this, genPath, changeset);
+              const api = MapChangeApi.fromGeneratorApi(genApi, changeset);
 
               // generator.map()
               const mapResult = generator.map ? await generator.map(api, change) : change;
+
+              api.destroy();
 
               genPaths.set(change.path, { change, mapResult });
             }
@@ -180,9 +190,9 @@ export class Macrome {
       }
     }
 
-    for (const { generator, paths: genPaths } of this.generatorInstances) {
+    for (const { generator, api, paths: genPaths } of this.generatorInstances) {
       if (generator.reduce && genPaths.size) {
-        await generator.reduce(null!, genPaths);
+        await generator.reduce(api, genPaths);
       }
     }
   }

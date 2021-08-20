@@ -1,4 +1,4 @@
-import type { MapChangeApi, StaticApi } from './apis';
+import type { MapChangeApi, GeneratorApi } from './apis';
 
 import type { Operation } from './operations';
 
@@ -53,11 +53,11 @@ export interface Generator<T> extends Matchable {
   // eslint-disable-next-line @typescript-eslint/no-misused-new
   new (options: Record<string, any>): Generator<T>;
 
-  initialize(api: StaticApi): Promise<unknown>;
+  initialize(api: GeneratorApi): Promise<unknown>;
 
   map(api: MapChangeApi, change: Change): Promise<T>;
 
-  reduce(api: StaticApi, changeMap: Map<string, T>): Promise<unknown>;
+  reduce(api: GeneratorApi, changeMap: Map<string, T>): Promise<unknown>;
 
-  destroy(api: StaticApi): Promise<unknown>;
+  destroy(api: GeneratorApi): Promise<unknown>;
 }
