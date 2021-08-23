@@ -7,7 +7,6 @@ import { map, flat, filter, arrayFromAsync, asyncFilter, asyncMap, flatMap } fro
 import { traverse } from './traverse';
 import { WatchmanClient, expressionFromMatchable } from './watchman';
 import { Api, GeneratorApi, MapChangeApi } from './apis';
-import { Changeset } from './changeset';
 import { matches } from './matchable';
 import { logger } from './utils/logger';
 import { buildOptions, Options, BuiltOptions } from './config';
@@ -16,6 +15,8 @@ import accessors from './accessors';
 import { ADD, Operation, REMOVE, UPDATE } from './operations';
 import { vcsConfigs, VCSConfig } from './vcs-configs';
 import { Accessor, Generator, Change } from './types';
+import { get } from './utils/map';
+import Queue from '@iter-tools/queue';
 
 const { unlink } = fsPromises;
 
@@ -27,15 +28,14 @@ export class Macrome {
   api: Api;
   vcsConfig: VCSConfig | null;
   watchClient: WatchmanClient | null;
-  generators: Map<
-    string,
-    Array<{
-      generator: Generator<unknown>;
+  generators: Map<string, Array<Generator<unknown>>>;
+  generatorsMeta: WeakMap<
+    Generator<unknown>,
+    {
       api: GeneratorApi;
-      paths: Map<string, { change: Change; mapResult: unknown }>;
-    }>
+      mappings: Map<string, unknown>; // path -> map() result
+    }
   >;
-  changesets: Map<string, Changeset>;
   accessorsByFileType: Map<string, Accessor>;
 
   constructor(apiOptions: Options) {
@@ -62,7 +62,7 @@ export class Macrome {
     this.vcsConfig = null;
     this.watchClient = null;
     this.generators = new Map();
-    this.changesets = new Map();
+    this.generatorsMeta = new WeakMap();
 
     if (vcsDir) {
       const vcsDirName = basename(vcsDir);
@@ -95,11 +95,9 @@ export class Macrome {
   async instantiateGenerators(generatorPath: string): Promise<void> {
     const Generator: Generator<unknown> = requireFresh(generatorPath);
 
-    if (this.generators.has(generatorPath)) {
-      for (const { api, generator } of this.generators.get(generatorPath)!) {
-        await generator.destroy?.(api);
-        api.destroy();
-      }
+    for (const { api, generator } of get(this.generators, generatorPath, [])) {
+      await generator.destroy?.(api);
+      api.destroy();
     }
 
     this.generators.set(generatorPath, []);
@@ -107,13 +105,14 @@ export class Macrome {
     const stubs = this.options.generators.get(generatorPath)!;
 
     for (const stub of stubs) {
-      const paths = new Map();
+      const mappings = new Map();
       const generator = new Generator(stub.options);
       const api = GeneratorApi.fromApi(this.api, this.relative(generatorPath));
 
       await generator.initialize?.(api);
 
-      this.generators.get(generatorPath)!.push({ generator, api, paths });
+      this.generators.get(generatorPath)!.push(generator);
+      this.generatorsMeta.set(generator, { mappings, api });
     }
   }
 
@@ -123,64 +122,83 @@ export class Macrome {
     return this.accessorsByFileType.get(ext) || null;
   }
 
+  protected async forMatchingGenerators(
+    path: string,
+    cb: (generator: Generator<unknown>) => unknown,
+  ): Promise<void> {
+    for (const generator of this.generatorInstances) {
+      if (matches(path, generator)) {
+        cb(generator);
+      }
+    }
+  }
+
   // where the magic happens
-  async processChanges(rootChanges: Array<Change>): Promise<void> {
-    const { changesets } = this;
+  // rename this to changeset once the changeset name is no longer in use?
+  async processChanges(changeQueue: Queue<Change>): Promise<void> {
     // Assumption: two input changes will not both write the same output file
     //   we could detect this and error (or warn and let the later gen overwrite?)
     //     allows us to parallelize
 
+    const { options, generatorInstances, generatorsMeta } = this;
+
+    let { settleTTL } = options;
     // TODO parallelize
     // may want to factor out runners, parallel and non-parallel a la jest
-    for (const change of rootChanges) {
-      const { path } = change;
+    while (true) {
+      if (!settleTTL) {
+        throw new Error(
+          'Macrome state has not settled after 20 cycles, likely indicating an infinite loop',
+        );
+      }
 
-      if (change.operation === REMOVE) {
-        const changeset = changesets.get(path);
+      for (const change of changeQueue) {
+        const { path } = change;
 
-        if (changeset) {
+        const { generatedPaths = [] } = get(metaCache, path, {});
+
+        if (change.operation === REMOVE) {
           // Remove the root file and files it caused to be generated
-          for (const path of changeset.paths) {
+          for (const path of generatedPaths) {
             if (path !== change.path && (await this.hasHeader(path))) {
               await unlink(this.resolve(path));
             }
           }
           // Remove any map results the file made
-          for (const { generator, paths: genPaths } of this.generatorInstances) {
-            if (matches(change.path, generator)) {
-              genPaths.delete(change.path);
-            }
-          }
-          changesets.delete(path);
-        }
-      } else {
-        const changeset = new Changeset(change);
-        changesets.set(path, changeset);
+          this.forMatchingGenerators(path, (generator) => {
+            generatorsMeta.get(generator)!.mappings.delete(path);
+          });
 
-        // apis expand queue as processing is done
-        for (const change of changeset.queue) {
+          await unlink(path);
+        } else {
           // Generator loop is inside change queue loop
-          for (const { generator, api: genApi, paths: genPaths } of this.generatorInstances) {
+          for (const generator of generatorInstances) {
+            const { mappings, api: genApi } = generatorsMeta.get(generator)!;
+
             if (matches(change.path, generator)) {
               // Changes made through this api feed back into the queue
-              const api = MapChangeApi.fromGeneratorApi(genApi, changeset);
+              const api = MapChangeApi.fromGeneratorApi(genApi, changeQueue, change);
 
               // generator.map()
               const mapResult = generator.map ? await generator.map(api, change) : change;
 
-              api.destroy();
+              mappings.set(change.path, mapResult);
 
-              genPaths.set(change.path, { change, mapResult });
+              api.destroy();
             }
           }
         }
       }
-    }
 
-    for (const { generator, api, paths: genPaths } of this.generatorInstances) {
-      if (generator.reduce && genPaths.size) {
-        await generator.reduce(api, genPaths);
+      for (const generator of this.generatorInstances) {
+        const { mappings, api } = generatorsMeta.get(generator)!;
+        if (mappings.size) {
+          // what happens if the changes reduce makes are mappable?
+          await generator.reduce?.(api, mappings);
+        }
       }
+
+      settleTTL--;
     }
   }
 
@@ -201,15 +219,6 @@ export class Macrome {
     );
 
     await this.processChanges(rootChanges);
-
-    const generatedPaths = new Set(flatMap(({ paths }) => paths, this.changesets.values()));
-
-    // remove files which had headers but were not generated
-    for (const path of initialPaths) {
-      if (!generatedPaths.has(path)) {
-        await unlink(this.resolve(path));
-      }
-    }
   }
 
   async watch(): Promise<void> {

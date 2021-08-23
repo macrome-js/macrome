@@ -7,3 +7,7 @@ export function groupBy<K, V>(getKey: (value: V) => K, iterable: Iterable<V>): M
   }
   return grouped;
 }
+
+export function get(map: Map<K, V>, key: K, whenNotHas: V): V {
+  return map.has(key) ? map.get(key) : whenNotHas;
+}

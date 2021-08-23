@@ -11,6 +11,7 @@ export type Options = {
   root?: string;
   configPath?: string;
   alwaysIgnored?: string | Array<string>;
+  settleTTL?: number;
   generators?: Array<string | [string, Record<string, any>]>;
 };
 
@@ -24,7 +25,8 @@ export type BuiltOptions = {
   quiet: boolean;
   root: string;
   configPath: string | null;
-  alwaysIgnored?: Array<string>;
+  alwaysIgnored: Array<string>;
+  settleTTL: number;
   generators: Map<string, Array<GeneratorStub>>;
 };
 
@@ -68,6 +70,7 @@ export function buildOptions(apiOptions: Options = {}): BuiltOptions {
 
   return {
     quiet: false,
+    settleTTL: 20,
     ...configOptions,
     ...apiOptions,
     generators,

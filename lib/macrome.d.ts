@@ -1,6 +1,5 @@
 import { WatchmanClient } from './watchman';
-import { Api, GeneratorApi } from './apis';
-import { Changeset } from './changeset';
+import { Api } from './apis';
 import { Options, BuiltOptions } from './config';
 import { VCSConfig } from './vcs-configs';
 import { Accessor, Generator, Change } from './types';
@@ -12,15 +11,7 @@ export declare class Macrome {
     api: Api;
     vcsConfig: VCSConfig | null;
     watchClient: WatchmanClient | null;
-    generators: Map<string, Array<{
-        generator: Generator<unknown>;
-        api: GeneratorApi;
-        paths: Map<string, {
-            change: Change;
-            mapResult: unknown;
-        }>;
-    }>>;
-    changesets: Map<string, Changeset>;
+    generators: Map<string, Array<Generator<unknown>>>;
     accessorsByFileType: Map<string, Accessor>;
     constructor(apiOptions: Options);
     private initialize;
@@ -28,7 +19,7 @@ export declare class Macrome {
     get logger(): any;
     instantiateGenerators(generatorPath: string): Promise<void>;
     accessorFor(path: string): Accessor | null;
-    processChanges(rootChanges: Array<Change>): Promise<void>;
+    processChanges(changeQueue: Iterable<Change>): Promise<void>;
     build(): Promise<void>;
     watch(): Promise<void>;
     stopWatching(): void;
