@@ -1,44 +1,15 @@
 import type { Macrome } from './macrome';
-import type { WriteOptions, ReadOptions, Accessor, File } from './types';
+import type { WriteOptions, ReadOptions, Accessor, File, Change, Annotations } from './types';
 
 import { relative, dirname } from 'path';
+import { promises as fsPromises } from 'fs';
 
-import { UPDATE } from './operations';
 import { buildReadOptions } from './utils/fs';
+import { FileHandle } from 'fs/promises';
+
+const { open } = fsPromises;
 
 const _ = Symbol.for('private members');
-
-
-
-/*
-Possible binding orders
-
-macrome -> generator -> queue -> path OR
-macrome -> queue -> generator -> path OR // I think this is right
-macrome -> generator, queue -> path OR
-macrome, generator, queue -> path
-
-Queue is more fundamental than generator. We could write without a generator, but not without a queue
-  Use cases for writing with no generator?
-    Perhaps writing .gitignore-type files?
-  If we want to offer built-in functionality, would we not dogfood with our own APIs?
-    can you build a gitignore generator this way?
-      should generators get the fs cache?
-
-Can macrome ever write without a queue?
-What is the behavior when a reducer writes a change that can be mapped?
-  We must either error on the write and track the map result, otherwise state will become inconsistent
-  State could bounce back and forth from map -> reduce -> map -> reduce
-    We could track bouncing depth and make it configurable. I've seen other tools do this.
-    We could force bouncing depth to 0, i.e. fail if reducer writes a mappable input
-    We could allow bouncing but detect cycles
-      Most cycles are likely larger than size two...?
-    We could search for ways to break cycles, like detecting "changes" which do not alter data?
-      The data in this case would need to be the contents of any written files and the map result.
-        Files could be compared as sets of hashes
-        JS object comparison is a lot harder. Could force an interface or permit a custom comparator
-  Let's error for now! It's easier to build and it will give us a chance to see what happens in the wild.
-*/
 
 type ApiProtected = {
   destroyed: boolean;
@@ -54,6 +25,9 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Api is a facade over the Macrome class which exposes the functionality which should be accessible to generators
+ */
 export class Api {
   protected [_]: ApiProtected;
 
@@ -87,6 +61,13 @@ export class Api {
     return this[_].macrome.accessorFor(path);
   }
 
+  async readAnnotations(
+    path: string,
+    options: { handle: FileHandle },
+  ): Promise<Annotations | null> {
+    return await this[_].macrome.readAnnotations(path, options);
+  }
+
   async read(path: string, options: ReadOptions): Promise<string> {
     this.__assertNotDestroyed('read');
 
@@ -103,6 +84,8 @@ export class Api {
   }
 
   async write(path: string, content: string, options: WriteOptions): Promise<void> {
+    const { macrome } = this[_];
+
     this.__assertNotDestroyed('write');
 
     const accessor = this.accessorFor(path)!;
@@ -112,10 +95,33 @@ export class Api {
       },
       content,
     };
+    const now = Date.now();
+
+    let handle;
     try {
-      await accessor.write(this.resolve(path), file, options);
+      handle = await open(this.resolve(path), 'a+');
+      const { mtimeMs } = await handle.stat();
+      const new_ = mtimeMs > now; // is there a better way to implement this?
+
+      const annotations = await accessor.readAnnotations(handle);
+      if (annotations === null) {
+        throw new Error('macrome will not overwrite non-generated files');
+      }
+
+      await handle.truncate();
+
+      await accessor.write(handle, file, options);
+
+      macrome.enqueue({
+        path,
+        exists: true,
+        new: new_,
+        mtimeMs,
+      });
     } catch (e) {
       throw this.decorateError(e, 'write');
+    } finally {
+      handle?.close();
     }
   }
 }
@@ -156,20 +162,20 @@ export class MapApiError extends ApiError {
 }
 
 type MapChangeApiProtected = GeneratorApiProtected & {
-  changeset: Changeset;
+  change: Change;
 };
 
 export class MapChangeApi extends GeneratorApi {
   protected [_]: MapChangeApiProtected;
 
-  constructor(macrome: Macrome, generatorPath: string, changeset: Changeset) {
+  constructor(macrome: Macrome, generatorPath: string, change: Change) {
     super(macrome, generatorPath);
-    this[_].changeset = changeset;
+    this[_].change = change;
   }
 
-  static fromGeneratorApi(generatorApi: GeneratorApi, changeset: Changeset): MapChangeApi {
+  static fromGeneratorApi(generatorApi: GeneratorApi, change: Change): MapChangeApi {
     const { macrome, generatorPath } = generatorApi[_];
-    return new MapChangeApi(macrome, generatorPath, changeset);
+    return new MapChangeApi(macrome, generatorPath, change);
   }
 
   protected decorateError(error: Error, verb: string): MapApiError {
@@ -179,24 +185,13 @@ export class MapChangeApi extends GeneratorApi {
   }
 
   getAnnotations(destPath: string): Map<string, any> {
-    const { changeset } = this[_];
+    const { macrome } = this[_];
 
-    const relPath = relative(dirname(destPath), changeset.root);
+    const relPath = relative(dirname(destPath), macrome.root);
 
     return new Map([
       ...super.getAnnotations(destPath),
       ['generated-from', relPath.startsWith('.') ? relPath : `./${relPath}`],
     ]);
-  }
-
-  async write(path: string, content: string, options: WriteOptions): Promise<void> {
-    const { changeset } = this[_];
-
-    changeset.add({
-      path,
-      operation: UPDATE,
-    });
-
-    await super.write(path, content, options);
   }
 }

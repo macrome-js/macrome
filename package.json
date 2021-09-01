@@ -7,7 +7,7 @@
     "macrome": "./bin/cli.js"
   },
   "engines": {
-    "node": ">=12.0.0"
+    "node": ">=12.9.0"
   },
   "files": [
     "lib/**/*.js",
@@ -59,7 +59,6 @@
     "picomatch": "^2.0.7",
     "prettier": "^2.3.1",
     "read-chunk": "^3.2.0",
-    "recursive-readdir": "^2.2.2",
     "strtok3": "^6.0.3"
   },
   "devDependencies": {

@@ -1,11 +1,12 @@
-import { Accessor, Annotations, File, ReadOptions, WriteOptions } from '../../types';
+import type { FileHandle } from 'fs/promises';
+import type { Accessor, Annotations, File, ReadOptions, WriteOptions } from '../../types';
 
-import { promises as fsPromises, createReadStream } from 'fs';
+import { promises as fsPromises } from 'fs';
 import { first, firstOr } from 'iter-tools-es';
 // @ts-ignore
 import { parse, exec } from '@iter-tools/regex/dist/async/chunked';
 import { CCommentParser } from './parser';
-import { buildReadOptions } from '../../utils/fs';
+import { buildReadOptions, createReadStream } from '../../utils/fs';
 
 const { readFile, writeFile } = fsPromises;
 
@@ -26,12 +27,12 @@ export class CAccessor implements Accessor {
   supportedFileTypes = supportedFileTypes;
   commentParser = new CCommentParser();
 
-  async readAnnotations(path: string): Promise<Annotations> {
-    const match = await exec(headerExp, createReadStream(path, 'utf8'));
+  async readAnnotations(path: string | FileHandle): Promise<Annotations | null> {
+    const match = await exec(headerExp, createReadStream(path));
     return match && this.commentParser.parse(match[2]).annotations;
   }
 
-  async read(path: string, options?: ReadOptions): Promise<File> {
+  async read(path: string | FileHandle, options?: ReadOptions): Promise<File> {
     const content = await readFile(path, buildReadOptions(options));
 
     const match = await exec(headerExp, content);
@@ -48,7 +49,7 @@ export class CAccessor implements Accessor {
     );
   }
 
-  async write(path: string, file: File, options: WriteOptions): Promise<void> {
+  async write(path: string | FileHandle, file: File, options: WriteOptions): Promise<void> {
     const { header, content } = file;
     if (header && (!header.annotations || first(header.annotations.keys()) !== 'macrome')) {
       throw new Error('macrome annotation must be first');

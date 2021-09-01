@@ -5,12 +5,13 @@ import { map, concat, execPipe } from 'iter-tools-es';
 
 import { logger } from './utils/logger';
 import { groupBy } from './utils/map';
+import { expressionMerger, asArray } from './matchable';
 
 export type Options = {
   quiet?: boolean;
   root?: string;
-  configPath?: string;
-  alwaysIgnored?: string | Array<string>;
+  configPath?: string | null;
+  alwaysExclude?: string | string[] | null;
   settleTTL?: number;
   generators?: Array<string | [string, Record<string, any>]>;
 };
@@ -25,16 +26,12 @@ export type BuiltOptions = {
   quiet: boolean;
   root: string;
   configPath: string | null;
-  alwaysIgnored: Array<string>;
+  alwaysExclude: string | string[];
   settleTTL: number;
   generators: Map<string, Array<GeneratorStub>>;
 };
 
-const alwaysIgnored = ['.git', 'node_modules'];
-
-function asArray(glob?: string | Array<string>): Array<string> {
-  return Array.isArray(glob) ? glob : glob ? [glob] : [];
-}
+const alwaysExclude = ['.git', 'node_modules'];
 
 export function buildOptions(apiOptions: Options = {}): BuiltOptions {
   const configPath =
@@ -74,11 +71,11 @@ export function buildOptions(apiOptions: Options = {}): BuiltOptions {
     ...configOptions,
     ...apiOptions,
     generators,
-    alwaysIgnored: [
-      ...alwaysIgnored,
-      ...asArray(configOptions.alwaysIgnored),
-      ...asArray(apiOptions.alwaysIgnored),
-    ],
+    alwaysExclude: asArray(
+      [alwaysExclude, configOptions.alwaysExclude, apiOptions.alwaysExclude].reduce(
+        (a, b) => expressionMerger(a, b) as any,
+      )!,
+    ),
     root,
     configPath,
   };

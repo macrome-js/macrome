@@ -1,10 +1,17 @@
+import type { Change } from './types';
+
 import { relative, join } from 'path';
 import invariant from 'invariant';
 import { Client as BaseWatchmanClient } from 'fb-watchman';
-import { when, map } from 'iter-tools-es';
+import { when, map, asyncFlatMap, asyncToArray, execPipe } from 'iter-tools-es';
 
-import { Matchable } from './types';
+import { promises as fsPromises } from 'fs';
+import { recursiveReadFiles } from './utils/fs';
+
+import { Matchable, expressionMatcher, defaultMatchers } from './matchable';
 import { logger as baseLogger } from './utils/logger';
+
+const { stat } = fsPromises;
 
 const logger = baseLogger.get('watchman');
 
@@ -18,35 +25,31 @@ function noneOf(files: Iterable<Array<any>>) {
   return files_ && files_.length ? [['not', ['anyof', ...files_]]] : [];
 }
 
-type SubscriptionOptions = {
+type QueryOptions = {
   expression: any;
   since?: string;
   fields?: Array<string>;
+};
+
+type SubscriptionOptions = QueryOptions & {
   drop?: Array<string>;
   defer?: Array<string>;
   defer_vcs?: boolean;
-  relative_root?: string;
-};
-
-type File = {
-  exists: boolean;
-  new: boolean;
-  name: string;
 };
 
 export function expressionFromMatchable(matchable: Matchable): any {
-  const { files, excludeFiles } = matchable;
+  const { include, exclude } = matchable;
   const fileExpr = (glob: string) => ['match', glob, 'wholename', matchSettings];
 
-  return ['allof', ['type', 'f'], ...noneOf(map(fileExpr, excludeFiles)), ...map(fileExpr, files)];
+  return ['allof', ['type', 'f'], ...noneOf(map(fileExpr, exclude)), ...map(fileExpr, include)];
 }
 
 type SubscriptionEvent = {
   subscription: string;
-  files: Array<File>;
+  files: Array<any>;
 };
 
-type OnEvent = (files: Array<File>) => Promise<unknown>;
+type OnEvent = (changes: Array<Change>) => Promise<unknown>;
 
 class WatchmanSubscription {
   name: string;
@@ -62,7 +65,15 @@ class WatchmanSubscription {
   async __onEvent(message: SubscriptionEvent): Promise<void> {
     try {
       const { files, subscription } = message;
-      if (subscription && files && files.length) await this.onEvent(files);
+
+      const files_ = files.map(({ name: path, exists, new: new_, mtime_ms: mtimeMs }) => ({
+        path,
+        exists,
+        new: new_,
+        mtimeMs,
+      }));
+
+      if (subscription && files && files.length) await this.onEvent(files_);
     } catch (e) {
       // TODO use new EventEmitter({ captureRejections: true }) once stable
       logger.error(e.stack);
@@ -90,47 +101,6 @@ export class WatchmanClient extends BaseWatchmanClient {
 
   get rootRelative(): string | null {
     return this.watchRoot && relative(this.watchRoot, this.root);
-  }
-
-  async watchProject(path: string): Promise<any> {
-    const resp = await this.command('watch-project', path);
-    this.watchRoot = resp.watch;
-    return resp;
-  }
-
-  async version(options: { required?: Array<string> } = {}): Promise<any> {
-    return await this.command('version', options);
-  }
-
-  async clock(): Promise<any> {
-    return await this.command('clock', this.watchRoot);
-  }
-
-  async flushSubscriptions(options = { sync_timeout: 2000 }): Promise<any> {
-    return await this.command('flush-subscriptions', this.watchRoot, options);
-  }
-
-  async subscribe(
-    path: string,
-    subscriptionName: string,
-    options: SubscriptionOptions,
-    onEvent: OnEvent,
-  ): Promise<WatchmanSubscription> {
-    const { expression, ...options_ } = options;
-
-    invariant(this.watchRoot, 'You must call macrome.watchProject() before macrome.subscribe()');
-
-    const response = await this.command('subscribe', this.watchRoot, subscriptionName, {
-      ...options_,
-      relative_root: relative(this.watchRoot, join(this.root, path)),
-      ...when(expression, { expression }),
-    });
-
-    const subscription = new WatchmanSubscription(response, onEvent);
-
-    this.subscriptions.set(subscriptionName, subscription);
-
-    return subscription;
   }
 
   async command(command: string, ...args: Array<any>): Promise<any> {
@@ -161,4 +131,82 @@ export class WatchmanClient extends BaseWatchmanClient {
       }
     });
   }
+
+  async watchProject(path: string): Promise<any> {
+    const resp = await this.command('watch-project', path);
+    this.watchRoot = resp.watch;
+    return resp;
+  }
+
+  async version(options: { required?: Array<string> } = {}): Promise<any> {
+    return await this.command('version', options);
+  }
+
+  async clock(): Promise<any> {
+    return await this.command('clock', this.watchRoot);
+  }
+
+  async query(path: string, options: QueryOptions): Promise<any> {
+    const { expression, ...options_ } = options;
+
+    invariant(this.watchRoot, 'You must call watchman.watchProject() before watchman.query()');
+
+    const response = await this.command('query', this.watchRoot, {
+      ...options_,
+      relative_root: relative(this.watchRoot, join(this.root, path)),
+      ...when(expression, { expression }),
+    });
+    return response;
+  }
+
+  async subscribe(
+    path: string,
+    subscriptionName: string,
+    options: SubscriptionOptions,
+    onEvent: OnEvent,
+  ): Promise<WatchmanSubscription> {
+    const { expression, ...options_ } = options;
+
+    invariant(this.watchRoot, 'You must call watchman.watchProject() before watchman.subscribe()');
+
+    const response = await this.command('subscribe', this.watchRoot, subscriptionName, {
+      ...options_,
+      relative_root: relative(this.watchRoot, join(this.root, path)),
+      ...when(expression, { expression }),
+    });
+
+    const subscription = new WatchmanSubscription(response, onEvent);
+
+    this.subscriptions.set(subscriptionName, subscription);
+
+    return subscription;
+  }
+
+  async flushSubscriptions(options = { sync_timeout: 2000 }): Promise<any> {
+    return await this.command('flush-subscriptions', this.watchRoot, { ...options });
+  }
+}
+
+// Mimic behavior of watchman's initial build so that `macdrome build` does not rely on the watchman service
+export async function dumbTraverse(root: string, matchable: Matchable): Promise<Array<Change>> {
+  return await execPipe(
+    recursiveReadFiles(root, expressionMatcher(matchable.exclude, 'exclude')),
+    // TODO asyncFlatMapParallel once it's back
+    asyncFlatMap(async (path) => {
+      try {
+        const stats = await stat(path);
+        return [
+          {
+            path,
+            mtimeMs: stats.mtimeMs,
+            new: false,
+            exists: true,
+          },
+        ];
+      } catch (e) {
+        return [];
+      }
+    }),
+    asyncToArray,
+  );
 }

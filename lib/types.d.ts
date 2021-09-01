@@ -1,11 +1,12 @@
+import { FileHandle } from 'fs/promises';
 import type { MapChangeApi, GeneratorApi } from './apis';
 
-import type { Operation } from './operations';
-
-export interface Change {
+export type Change = {
   path: string;
-  operation: Operation;
-}
+  exists: boolean;
+  new: boolean;
+  mtimeMs: number;
+};
 
 export type Annotations = Map<string, any>;
 
@@ -37,16 +38,27 @@ export type WriteOptions =
 export interface Accessor {
   supportedFileTypes: Array<string>;
 
-  readAnnotations(path: string): Promise<Annotations>;
+  readAnnotations(path: string | FileHandle): Promise<Annotations | null>;
 
-  read(path: string, options: ReadOptions): Promise<File>;
+  read(path: string | FileHandle, options?: ReadOptions): Promise<File>;
 
-  write(path: string, file: File, options: WriteOptions): Promise<void>;
+  write(path: string | FileHandle, file: File, options?: WriteOptions): Promise<void>;
 }
 
+export type Matcher = (path: string) => boolean;
+
+export type MatchExpression = Matcher | Array<Matcher | string> | string | null | undefined;
+
+/**
+ * If include is nullish, everything is presumed to be included.
+ * If exclude is nullish, nothing is presumed to be excluded.
+ *
+ * A directory which is not included will still be traversed as files within it could be.
+ * If you wish to omit traversal of an entire directory, just exclude it.
+ */
 export type Matchable = {
-  files?: string | Array<string>;
-  excludeFiles?: string | Array<string>;
+  include?: MatchExpression;
+  exclude?: MatchExpression;
 };
 
 export interface Generator<T> extends Matchable {

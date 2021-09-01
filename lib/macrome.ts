@@ -1,33 +1,34 @@
+import type { FileHandle } from 'fs/promises';
+import type { Accessor, Generator, Change, Annotations } from './types';
+
 import { join, dirname, basename, extname, relative } from 'path';
 import { promises as fsPromises } from 'fs';
 import requireFresh from 'import-fresh';
 import findUp from 'find-up';
-import { map, flat, filter, arrayFromAsync, asyncFilter, asyncMap, flatMap } from 'iter-tools-es';
+import { map, flat, flatMap } from 'iter-tools-es';
 
-import { traverse } from './traverse';
-import { WatchmanClient, expressionFromMatchable } from './watchman';
+import { WatchmanClient, expressionFromMatchable, dumbTraverse } from './watchman';
 import { Api, GeneratorApi, MapChangeApi } from './apis';
 import { matches } from './matchable';
 import { logger } from './utils/logger';
 import { buildOptions, Options, BuiltOptions } from './config';
 
 import accessors from './accessors';
-import { ADD, Operation, REMOVE, UPDATE } from './operations';
 import { vcsConfigs, VCSConfig } from './vcs-configs';
-import { Accessor, Generator, Change } from './types';
 import { get } from './utils/map';
 import Queue from '@iter-tools/queue';
+import { fsCache } from './fs-cache';
 
 const { unlink } = fsPromises;
 
 export class Macrome {
   options: BuiltOptions;
-  initialized: boolean;
+  initialized = false;
   root: string;
   watchRoot: string;
   api: Api;
-  vcsConfig: VCSConfig | null;
-  watchClient: WatchmanClient | null;
+  vcsConfig: VCSConfig | null = null;
+  watchClient: WatchmanClient | null = null;
   generators: Map<string, Array<Generator<unknown>>>;
   generatorsMeta: WeakMap<
     Generator<unknown>,
@@ -36,6 +37,7 @@ export class Macrome {
       mappings: Map<string, unknown>; // path -> map() result
     }
   >;
+  queue: Queue<Change> | null = null;
   accessorsByFileType: Map<string, Accessor>;
 
   constructor(apiOptions: Options) {
@@ -55,12 +57,9 @@ export class Macrome {
       },
     );
 
-    this.initialized = false;
     this.root = root;
     this.watchRoot = dirname(vcsDir || root);
     this.api = new Api(this);
-    this.vcsConfig = null;
-    this.watchClient = null;
     this.generators = new Map();
     this.generatorsMeta = new WeakMap();
 
@@ -77,10 +76,20 @@ export class Macrome {
     );
   }
 
-  private async initialize() {
+  private async _initialize(initialFiles: Array<Change>) {
     for (const generatorPath of this.options.generators.keys()) {
       await this.instantiateGenerators(generatorPath);
     }
+
+    for (const { path, mtimeMs } of initialFiles) {
+      const annotations = await this.readAnnotations(path);
+      fsCache.set(path, {
+        mtimeMs,
+        annotations,
+        generatedPaths: new Set(),
+      });
+    }
+
     this.initialized = true;
   }
 
@@ -92,10 +101,16 @@ export class Macrome {
     return logger;
   }
 
+  enqueue(change: Change): void {
+    this.queue!.push(change);
+    fsCache.set(change.path, {});
+  }
+
   async instantiateGenerators(generatorPath: string): Promise<void> {
     const Generator: Generator<unknown> = requireFresh(generatorPath);
 
-    for (const { api, generator } of get(this.generators, generatorPath, [])) {
+    for (const generator of get(this.generators, generatorPath, [])) {
+      const { api } = this.generatorsMeta.get(generator)!;
       await generator.destroy?.(api);
       api.destroy();
     }
@@ -122,6 +137,18 @@ export class Macrome {
     return this.accessorsByFileType.get(ext) || null;
   }
 
+  async readAnnotations(
+    path: string,
+    { handle }: { handle?: FileHandle | null } = {},
+  ): Promise<Annotations | null> {
+    const accessor = this.accessorsByFileType.get(extname(path).slice(1));
+
+    if (!accessor) return null;
+
+    const resolved = handle != null ? handle : this.resolve(path);
+    return await accessor.readAnnotations(resolved);
+  }
+
   protected async forMatchingGenerators(
     path: string,
     cb: (generator: Generator<unknown>) => unknown,
@@ -133,34 +160,37 @@ export class Macrome {
     }
   }
 
-  // where the magic happens
-  // rename this to changeset once the changeset name is no longer in use?
-  async processChanges(changeQueue: Queue<Change>): Promise<void> {
+  // Where the magic happens.
+  async processChanges(): Promise<void> {
     // Assumption: two input changes will not both write the same output file
     //   we could detect this and error (or warn and let the later gen overwrite?)
     //     allows us to parallelize
 
-    const { options, generatorInstances, generatorsMeta } = this;
+    const { queue, options, generatorInstances, generatorsMeta } = this;
 
-    let { settleTTL } = options;
+    const { settleTTL } = options;
+    let ttl = settleTTL;
     // TODO parallelize
     // may want to factor out runners, parallel and non-parallel a la jest
     while (true) {
-      if (!settleTTL) {
+      // Handle bouncing between states: map -> reduce -> map -> reduce
+      // We always enqueue changes before the watcher reports them, primarily to
+      // ensure that this error is never subject to a race condition.
+      if (ttl === 0) {
         throw new Error(
-          'Macrome state has not settled after 20 cycles, likely indicating an infinite loop',
+          `Macrome state has not settled after ${settleTTL} cycles, likely indicating an infinite loop`,
         );
       }
 
-      for (const change of changeQueue) {
+      for (const change of queue!) {
         const { path } = change;
 
-        const { generatedPaths = [] } = get(metaCache, path, {});
+        const { generatedPaths } = fsCache.get(path)!;
 
-        if (change.operation === REMOVE) {
+        if (!change.exists) {
           // Remove the root file and files it caused to be generated
           for (const path of generatedPaths) {
-            if (path !== change.path && (await this.hasHeader(path))) {
+            if (path !== change.path && (await this.readAnnotations(path)) !== null) {
               await unlink(this.resolve(path));
             }
           }
@@ -177,7 +207,7 @@ export class Macrome {
 
             if (matches(change.path, generator)) {
               // Changes made through this api feed back into the queue
-              const api = MapChangeApi.fromGeneratorApi(genApi, changeQueue, change);
+              const api = MapChangeApi.fromGeneratorApi(genApi, change);
 
               // generator.map()
               const mapResult = generator.map ? await generator.map(api, change) : change;
@@ -198,32 +228,44 @@ export class Macrome {
         }
       }
 
-      settleTTL--;
+      ttl--;
     }
   }
 
   async build(): Promise<void> {
-    const { alwaysIgnored: ignored } = this.options;
+    const { alwaysExclude: exclude } = this.options;
 
-    if (!this.initialized) await this.initialize();
+    const changes = await dumbTraverse(this.root, {
+      include: (path) => !!this.accessorFor(path),
+      exclude,
+    });
 
-    const initialPaths = [
-      ...filter(
-        (path) => !!this.accessorFor(path),
-        await traverse(this.root, { excludeFiles: ignored }),
-      ),
-    ];
-    const roots = asyncFilter(async (path) => !(await this.hasHeader(path)), initialPaths);
-    const rootChanges = await arrayFromAsync(
-      asyncMap((path) => ({ path, operation: ADD as Operation }), roots),
-    );
+    if (!this.initialized) await this._initialize(changes);
 
-    await this.processChanges(rootChanges);
+    this.queue = new Queue();
+
+    for (const change of changes) {
+      if ((await this.readAnnotations(change.path)) === null) {
+        this.enqueue(change);
+      }
+    }
+
+    await this.processChanges();
+    this.queue = null;
   }
+
+  /*
+
+Initial traverse (build: mine, watch: watchman)
+Fill cache with initial paths (mtime, annotations)
+Process non-generated files (fill cache with generatedFiles)
+For each initial generated path, remove it if cache mtime is unchanged (build)
+
+  */
 
   async watch(): Promise<void> {
     const { root, options, vcsConfig, watchRoot } = this;
-    const { alwaysIgnored: ignored } = options;
+    const { alwaysExclude: exclude } = options;
     const client = new WatchmanClient(root);
 
     this.watchClient = client;
@@ -252,10 +294,31 @@ export class Macrome {
 
     await client.watchProject(watchRoot);
 
-    await this.build();
+    const fields = ['name', 'mtime_ms', 'exists', 'type', 'new'];
 
-    await client.flushSubscriptions();
-    const { clock: startClock } = await client.clock();
+    const expression = expressionFromMatchable({
+      // How should this work?
+      include: (path) => !!this.accessorFor(path),
+      exclude,
+    });
+
+    const { files: changes, clock: startClock } = await client.query(this.root, {
+      expression,
+      fields,
+    });
+
+    if (!this.initialized) await this._initialize(changes);
+
+    this.queue = new Queue();
+
+    for (const change of changes) {
+      if ((await this.readAnnotations(change.path)) === null) {
+        this.enqueue(change);
+      }
+    }
+
+    await this.processChanges();
+    this.queue = null;
 
     logger.notice('Initial generation completed; watching for changes...');
 
@@ -264,7 +327,7 @@ export class Macrome {
         watchRoot,
         'macrome-vcs-lock',
         {
-          expression: expressionFromMatchable({ files: [join(vcsConfig.dir, vcsConfig.lock)] }),
+          expression: expressionFromMatchable({ include: [join(vcsConfig.dir, vcsConfig.lock)] }),
           fields: ['name', 'exists'],
           defer_vcs: false,
         },
@@ -280,28 +343,6 @@ export class Macrome {
       );
     }
 
-    // await client.subscribe(
-    //   '',
-    //   'macrome-generators',
-    //   {
-    //     defer: ['vcs_lock_held'],
-    //     defer_vcs: false, // for consistency use our version
-    //     matchable: {
-    //       files: [
-    //         ...filter(
-    //           (resolvedPath) => !resolvedPath.startsWith('..'),
-    //           map((resolvedPath) => relative(watchRoot, resolvedPath), this.generatorStubs.keys()),
-    //         ),
-    //       ],
-    //     },
-    //   },
-    //   (files) => {
-    //     for (const file of files) {
-    //       this.instantiateGenerators(join(watchRoot, file.name));
-    //     }
-    //   },
-    // );
-
     // Establish one watch for all changes. Separate watches per generator would cause each
     // generator to run on all its inputs before anoteher generator could begin.
     // This would prevent parallelization.
@@ -309,19 +350,25 @@ export class Macrome {
       '/',
       'macrome-main',
       {
-        expression: expressionFromMatchable({ excludeFiles: ignored }),
+        expression,
         drop: ['vcs_lock_held'],
         defer_vcs: false, // for consistency use our version
-        fields: ['name', 'mtime_ms', 'exists', 'type', 'new'],
+        fields,
         since: startClock,
       },
-      async (files) => {
-        await this.processChanges(
-          files.map((file) => ({
-            operation: !file.exists ? REMOVE : file.new ? ADD : UPDATE,
-            path: file.name,
-          })),
-        );
+      async (changes) => {
+        if (this.queue === null) {
+          this.queue = new Queue(changes);
+          await this.processChanges();
+          this.queue = null;
+        } else {
+          for (const change of changes) {
+            // filter out "echo" changes: those we already enqueued without waiting for the watcher
+            if (fsCache.get(change.path)?.mtimeMs !== change.mtimeMs) {
+              this.enqueue(change);
+            }
+          }
+        }
       },
     );
   }
@@ -333,22 +380,13 @@ export class Macrome {
     }
   }
 
-  async hasHeader(path: string): Promise<boolean> {
-    const accessor = this.accessorsByFileType.get(extname(path).slice(1));
-
-    if (!accessor) return false;
-
-    const annotations = await accessor.readAnnotations(this.resolve(path));
-    return annotations === null ? false : !!annotations.get('macrome');
-  }
-
   async clean(): Promise<void> {
-    const { alwaysIgnored: ignored } = this.options;
+    const { alwaysExclude: exclude } = this.options;
 
-    const paths = await traverse(this.root, { excludeFiles: ignored });
+    const files = await dumbTraverse(this.root, { exclude });
 
-    for (const path of paths) {
-      if (await this.hasHeader(path)) {
+    for (const { path } of files) {
+      if ((await this.readAnnotations(path)) != null) {
         await unlink(this.resolve(path));
       }
     }
@@ -356,9 +394,7 @@ export class Macrome {
 
   async check(): Promise<boolean> {
     if (!this.vcsConfig) {
-      throw new Error(
-        'macrome.check() will soon work without version control, but it does not yet.',
-      );
+      throw new Error('macrome.check requires a version controlled project to work');
     }
 
     if (this.vcsConfig.isDirty(this.root)) {
@@ -366,7 +402,6 @@ export class Macrome {
       return false;
     }
 
-    await this.clean();
     await this.build();
 
     return !this.vcsConfig.isDirty(this.root);
