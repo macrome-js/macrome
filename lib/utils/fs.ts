@@ -6,7 +6,7 @@ import { join } from 'path';
 import { promises as fsPromises, createReadStream as fsCreateReadStream } from 'fs';
 import Queue from '@iter-tools/queue';
 
-import { Matcher, expressionMatcher } from '../matchable';
+import { expressionMatcher } from '../matchable';
 
 const { opendir } = fsPromises;
 
@@ -27,9 +27,11 @@ export async function createReadStream(path: string | FileHandle): Promise<ReadS
 
 export async function* recursiveReadFiles(
   root: string,
-  exclude?: string | string[] | Matcher,
+  exclude?: string | Array<string> | null,
+  suffixes?: Iterable<string>,
 ): AsyncGenerator<string> {
   const exclude_ = expressionMatcher(exclude, 'exclude');
+  const suffixes_ = new Set(suffixes);
   const dirQueue = new Queue([root]);
 
   for (const dir of dirQueue) {
@@ -47,7 +49,9 @@ export async function* recursiveReadFiles(
       if (isDir) {
         dirQueue.push(path);
       } else {
-        yield path;
+        if (suffixes_.has(path)) {
+          yield path;
+        }
       }
     }
   }

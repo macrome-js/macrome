@@ -235,10 +235,7 @@ export class Macrome {
   async build(): Promise<void> {
     const { alwaysExclude: exclude } = this.options;
 
-    const changes = await dumbTraverse(this.root, {
-      include: (path) => !!this.accessorFor(path),
-      exclude,
-    });
+    const changes = await dumbTraverse(this.root, exclude, this.accessorsByFileType.keys());
 
     if (!this.initialized) await this._initialize(changes);
 
@@ -259,7 +256,7 @@ export class Macrome {
 Initial traverse (build: mine, watch: watchman)
 Fill cache with initial paths (mtime, annotations)
 Process non-generated files (fill cache with generatedFiles)
-For each initial generated path, remove it if cache mtime is unchanged (build)
+For each initial generated path, remove it if cache mtime is unchanged (build, watch initial)
 
   */
 
@@ -290,6 +287,7 @@ For each initial generated path, remove it if cache mtime is unchanged (build)
         'field-mtime_ms',
         'relative_root',
       ],
+      optional: ['suffix-set'],
     });
 
     await client.watchProject(watchRoot);
@@ -297,13 +295,14 @@ For each initial generated path, remove it if cache mtime is unchanged (build)
     const fields = ['name', 'mtime_ms', 'exists', 'type', 'new'];
 
     const expression = expressionFromMatchable({
-      // How should this work?
-      include: (path) => !!this.accessorFor(path),
       exclude,
     });
 
+    const suffix = [...this.accessorsByFileType.keys()];
+
     const { files: changes, clock: startClock } = await client.query(this.root, {
       expression,
+      suffix,
       fields,
     });
 
@@ -327,7 +326,7 @@ For each initial generated path, remove it if cache mtime is unchanged (build)
         watchRoot,
         'macrome-vcs-lock',
         {
-          expression: expressionFromMatchable({ include: [join(vcsConfig.dir, vcsConfig.lock)] }),
+          expression: { name: join(vcsConfig.dir, vcsConfig.lock) },
           fields: ['name', 'exists'],
           defer_vcs: false,
         },
@@ -344,7 +343,7 @@ For each initial generated path, remove it if cache mtime is unchanged (build)
     }
 
     // Establish one watch for all changes. Separate watches per generator would cause each
-    // generator to run on all its inputs before anoteher generator could begin.
+    // generator to run on all its inputs before another generator could begin.
     // This would prevent parallelization.
     await client.subscribe(
       '/',
@@ -363,8 +362,9 @@ For each initial generated path, remove it if cache mtime is unchanged (build)
           this.queue = null;
         } else {
           for (const change of changes) {
+            const { path, exists, mtimeMs } = change;
             // filter out "echo" changes: those we already enqueued without waiting for the watcher
-            if (fsCache.get(change.path)?.mtimeMs !== change.mtimeMs) {
+            if (fsCache.get(path)?.mtimeMs !== mtimeMs || (!exists && fsCache.has(path))) {
               this.enqueue(change);
             }
           }
@@ -383,7 +383,7 @@ For each initial generated path, remove it if cache mtime is unchanged (build)
   async clean(): Promise<void> {
     const { alwaysExclude: exclude } = this.options;
 
-    const files = await dumbTraverse(this.root, { exclude });
+    const files = await dumbTraverse(this.root, exclude, this.accessorsByFileType.keys());
 
     for (const { path } of files) {
       if ((await this.readAnnotations(path)) != null) {

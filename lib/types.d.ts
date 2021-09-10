@@ -47,7 +47,7 @@ export interface Accessor {
 
 export type Matcher = (path: string) => boolean;
 
-export type MatchExpression = Matcher | Array<Matcher | string> | string | null | undefined;
+export type MatchExpression = Array<string> | string | null | undefined;
 
 /**
  * If include is nullish, everything is presumed to be included.

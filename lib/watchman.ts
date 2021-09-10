@@ -8,7 +8,7 @@ import { when, map, asyncFlatMap, asyncToArray, execPipe } from 'iter-tools-es';
 import { promises as fsPromises } from 'fs';
 import { recursiveReadFiles } from './utils/fs';
 
-import { Matchable, expressionMatcher, defaultMatchers } from './matchable';
+import { Matchable } from './matchable';
 import { logger as baseLogger } from './utils/logger';
 
 const { stat } = fsPromises;
@@ -29,11 +29,12 @@ type QueryOptions = {
   expression: any;
   since?: string;
   fields?: Array<string>;
+  suffixx?: string | Array<string>; // this is wrong. use suffix expression term
 };
 
 type SubscriptionOptions = QueryOptions & {
-  drop?: Array<string>;
-  defer?: Array<string>;
+  drop?: string | Array<string>;
+  defer?: string | Array<string>;
   defer_vcs?: boolean;
 };
 
@@ -85,6 +86,7 @@ export class WatchmanClient extends BaseWatchmanClient {
   root: string;
   watchRoot: string;
   subscriptions: Map<string, WatchmanSubscription>;
+  private _capabilities: Record<string, boolean> | null = null;
 
   constructor(root: string) {
     super();
@@ -101,6 +103,14 @@ export class WatchmanClient extends BaseWatchmanClient {
 
   get rootRelative(): string | null {
     return this.watchRoot && relative(this.watchRoot, this.root);
+  }
+
+  get capabilities(): Record<string, boolean> {
+    const capabilities = this._capabilities;
+    if (capabilities == null) {
+      throw new Error('You must call watchmanClient.version() with the capabilities you may need');
+    }
+    return capabilities;
   }
 
   async command(command: string, ...args: Array<any>): Promise<any> {
@@ -138,8 +148,12 @@ export class WatchmanClient extends BaseWatchmanClient {
     return resp;
   }
 
-  async version(options: { required?: Array<string> } = {}): Promise<any> {
-    return await this.command('version', options);
+  async version(
+    options: { required?: Array<string>; optional?: Array<string> } = {},
+  ): Promise<{ version: string; capabilities: Record<string, boolean> }> {
+    const resp = await this.command('version', options);
+    this._capabilities = resp.capabilities;
+    return resp;
   }
 
   async clock(): Promise<any> {
@@ -188,9 +202,13 @@ export class WatchmanClient extends BaseWatchmanClient {
 }
 
 // Mimic behavior of watchman's initial build so that `macdrome build` does not rely on the watchman service
-export async function dumbTraverse(root: string, matchable: Matchable): Promise<Array<Change>> {
+export async function dumbTraverse(
+  root: string,
+  exclude?: string | Array<string> | null,
+  suffixes?: Iterable<string>,
+): Promise<Array<Change>> {
   return await execPipe(
-    recursiveReadFiles(root, expressionMatcher(matchable.exclude, 'exclude')),
+    recursiveReadFiles(root, exclude, suffixes),
     // TODO asyncFlatMapParallel once it's back
     asyncFlatMap(async (path) => {
       try {
