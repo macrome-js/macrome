@@ -4,7 +4,7 @@ import type {
   Generator,
   Change,
   Annotations,
-  AsymmetricWatchmanExpression,
+  AsymmetricMMatchExpressionWithSuffixes,
 } from './types';
 
 import { join, dirname, basename, extname, relative } from 'path';
@@ -13,7 +13,7 @@ import requireFresh from 'import-fresh';
 import findUp from 'find-up';
 import { map, flat, flatMap } from 'iter-tools-es';
 
-import { WatchmanClient, standaloneQuery, matchExpr } from './watchman';
+import { WatchmanClient, standaloneQuery } from './watchman';
 import { Api, GeneratorApi, MapChangeApi } from './apis';
 import { matches } from './matchable';
 import { logger } from './utils/logger';
@@ -238,14 +238,12 @@ export class Macrome {
     }
   }
 
-  getBaseExpression(): AsymmetricWatchmanExpression {
+  getBaseExpression(): AsymmetricMMatchExpressionWithSuffixes {
     const { alwaysExclude: exclude } = this.options;
 
-    const suffixes = [...this.accessorsByFileType.keys()];
-
     return {
-      exclude: matchExpr(['match', exclude]),
-      include: ['suffix', suffixes],
+      suffixes: [...this.accessorsByFileType.keys()],
+      exclude,
     };
   }
 
@@ -276,8 +274,7 @@ For each initial generated path, remove it if cache mtime is unchanged (build, w
   */
 
   async watch(): Promise<void> {
-    const { root, options, vcsConfig, watchRoot } = this;
-    const { alwaysExclude: exclude } = options;
+    const { root, vcsConfig, watchRoot } = this;
     const client = new WatchmanClient(root);
 
     this.watchClient = client;
@@ -293,8 +290,7 @@ For each initial generated path, remove it if cache mtime is unchanged (build, w
         'term-allof',
         'term-anyof',
         'term-not',
-        'term-match',
-        'wildmatch',
+        'term-pcre',
         'field-name',
         'field-exists',
         'field-new',

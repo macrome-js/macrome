@@ -26,8 +26,8 @@ export async function createReadStream(path: string | FileHandle): Promise<ReadS
 export async function* recursiveReadFiles(
   root: string,
   options: {
-    shouldInclude?: (path: string, ent: Dirent) => boolean;
-    shouldExclude?: (path: string, ent: Dirent) => boolean;
+    shouldInclude?: (path: string, ent: Dirent) => boolean | undefined;
+    shouldExclude?: (path: string, ent: Dirent) => boolean | undefined;
   } = {},
 ): AsyncGenerator<string> {
   const { shouldInclude = () => true, shouldExclude = () => false } = options;

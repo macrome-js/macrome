@@ -1,34 +1,33 @@
-import type { AsymmetricWatchmanExpression, Change, WatchmanExpression } from './types';
+import type {
+  AsymmetricMMatchExpressionWithSuffixes,
+  Change,
+  MMatchExpression,
+  WatchmanExpression,
+} from './types';
 
-import { relative, join } from 'path';
+import { relative, join, extname } from 'path';
 import invariant from 'invariant';
 import { Client as BaseWatchmanClient } from 'fb-watchman';
+import * as mm from 'micromatch';
 import { when, map, asyncFlatMap, asyncToArray, execPipe } from 'iter-tools-es';
 
 import { promises as fsPromises } from 'fs';
 import { recursiveReadFiles } from './utils/fs';
 
 import { logger as baseLogger } from './utils/logger';
-import { getMatcher } from './expression-engine';
+import { asArray, mergeMatchers } from './matchable';
 
 const { stat } = fsPromises;
 
 const logger = baseLogger.get('watchman');
 
-const matchSettings = {
-  includedotfiles: true,
+const makeMatcher = (expr: MMatchExpression) => {
+  return expr ? mm.matcher(asArray(expr).join('|')) : undefined;
 };
 
-export const matchExpr = (expr: Array<unknown>): Array<unknown> => [
-  ...expr,
-  'wholename',
-  matchSettings,
-];
-
-function noneOf(files: Iterable<Array<any>> | undefined) {
-  const files_ = files && [...files];
-  return files_ && files_.length ? [['not', ['anyof', ...files_]]] : [];
-}
+const compoundExpr = (name: string, ...terms: Array<unknown>) => {
+  return [name, terms.length === 0 ? [] : terms.length === 1 ? terms[0] : ['anyof', terms]];
+};
 
 type QueryOptions = {
   since?: string;
@@ -40,14 +39,6 @@ type SubscriptionOptions = QueryOptions & {
   defer?: string | Array<string>;
   defer_vcs?: boolean;
 };
-
-export function symmetricExpressionFromAsymmetric(
-  asymmetric: AsymmetricWatchmanExpression,
-): WatchmanExpression {
-  const { include, exclude } = asymmetric;
-
-  return ['allof', ...noneOf(exclude), ...map(fileExpr, include)];
-}
 
 type SubscriptionEvent = {
   subscription: string;
@@ -117,6 +108,34 @@ export class WatchmanClient extends BaseWatchmanClient {
     return capabilities;
   }
 
+  __expressionFrom(
+    asymmetric: AsymmetricMMatchExpressionWithSuffixes | null | undefined,
+  ): WatchmanExpression {
+    const { suffixSet } = this.capabilities;
+    const { include, exclude, suffixes = [] } = asymmetric || {};
+    const fileExpr = (glob: string) => ['pcre', mm.makeRe(glob).source, 'wholename'];
+    // In macrome an excluded directory does not have its files traversed
+    // Watchman doesn't work like that, but we can simulate it by matching prefixes
+    // That is: if /foo/bar can match /foo/bar/baz, then the /foo/bar directory is fully excluded
+    const dirExpr = (glob: string) => {
+      const re = mm.makeRe(glob).source;
+      if (re[re.length - 1] !== '$') {
+        throw new Error('Expected glob regex to be anchored');
+      }
+      return ['pcre', re.slice(0, -1) + '(/|$)', 'wholename'];
+    };
+
+    return compoundExpr(
+      'allof',
+      ...compoundExpr('not', ...map(dirExpr, asArray(exclude))),
+      ...map(fileExpr, asArray(include)),
+      // See https://facebook.github.io/watchman/docs/expr/suffix.html#suffix-set
+      ...(suffixSet
+        ? compoundExpr('suffix', ...suffixes)
+        : compoundExpr('anyof', ...suffixes.map((suffix) => ['suffix', suffix]))),
+    );
+  }
+
   async command(command: string, ...args: Array<any>): Promise<any> {
     const fullCommand = [command, ...args];
 
@@ -166,7 +185,7 @@ export class WatchmanClient extends BaseWatchmanClient {
 
   async query(
     path: string,
-    expression?: AsymmetricWatchmanExpression | null,
+    expression?: AsymmetricMMatchExpressionWithSuffixes | null,
     options?: QueryOptions,
   ): Promise<any> {
     invariant(this.watchRoot, 'You must call watchman.watchProject() before watchman.query()');
@@ -174,14 +193,14 @@ export class WatchmanClient extends BaseWatchmanClient {
     return await this.command('query', this.watchRoot, {
       ...options,
       relative_root: relative(this.watchRoot, join(this.root, path)),
-      ...when(expression, { expression }),
+      ...when(expression, { expression: this.__expressionFrom(expression) }),
     });
   }
 
   async subscribe(
     path: string,
     subscriptionName: string,
-    expression: AsymmetricWatchmanExpression,
+    expression: AsymmetricMMatchExpressionWithSuffixes | null,
     options: SubscriptionOptions,
     onEvent: OnEvent,
   ): Promise<WatchmanSubscription> {
@@ -190,12 +209,7 @@ export class WatchmanClient extends BaseWatchmanClient {
     const response = await this.command('subscribe', this.watchRoot, subscriptionName, {
       ...options,
       relative_root: relative(this.watchRoot, join(this.root, path)),
-      // what is something?
-      // I need to figure out how to handle exclusion of directories excluding their contents
-      // i.e. symmetricFromAsymmetric
-      // use regex? (anchor at beginning, at end match anchor or path.sep)
-      // use directory?
-      ...when(expression, { expression: _something }),
+      ...when(expression, { expression: () => this.__expressionFrom(expression) }),
     });
 
     const subscription = new WatchmanSubscription(response, onEvent);
@@ -209,14 +223,15 @@ export class WatchmanClient extends BaseWatchmanClient {
 // Mimic behavior of watchman's initial build so that `macdrome build` does not rely on the watchman service
 export async function standaloneQuery(
   root: string,
-  expression?: AsymmetricWatchmanExpression | null,
+  expression?: AsymmetricMMatchExpressionWithSuffixes | null,
 ): Promise<Array<Change>> {
-  const { include, exclude } = expression || {};
+  const { include, exclude, suffixes } = expression || {};
+  const suffixSet = new Set(suffixes);
+  const shouldInclude = mergeMatchers((path) => suffixSet.has(extname(path)), makeMatcher(include));
+  const shouldExclude = makeMatcher(exclude);
+
   return await execPipe(
-    recursiveReadFiles(root, {
-      shouldInclude: getMatcher(include),
-      shouldExclude: getMatcher(exclude),
-    }),
+    recursiveReadFiles(root, { shouldInclude, shouldExclude }),
     // TODO asyncFlatMapParallel once it's back
     asyncFlatMap(async (path) => {
       try {

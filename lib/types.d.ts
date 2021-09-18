@@ -61,17 +61,11 @@ export type AsymmetricMMatchExpression = {
   exclude?: MMatchExpression;
 };
 
-export type WatchmanExpression = Array<unknown>;
-
-// An expression made up of watchman terms
-// e.g. https://facebook.github.io/watchman/docs/expr/allof.html
-// Watchman can already do this purely within its expression syntax but this is a good shorthand.
-// The asymmetric aspect is that excluding a directory is not the same as not including it.
-// An explicitly excluded directory need not be traversed.
-export type AsymmetricWatchmanExpression = {
-  include?: WatchmanExpression;
-  exclude?: WatchmanExpression;
+export type AsymmetricMMatchExpressionWithSuffixes = AsymmetricMMatchExpression & {
+  suffixes?: Array<string>;
 };
+
+export type WatchmanExpression = Array<unknown>;
 
 export interface Generator<T> extends AsymmetricMMatchExpression {
   // eslint-disable-next-line @typescript-eslint/no-misused-new

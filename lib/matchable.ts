@@ -1,7 +1,7 @@
 import type { AsymmetricMMatchExpression, Matcher, MMatchExpression } from './types';
 
 import { matcher as mmMatcher } from 'micromatch';
-import { filter, joinWithSeq, stringFrom } from 'iter-tools-es';
+import { filter, joinWithSeq, notNil, stringFrom } from 'iter-tools-es';
 
 export type { AsymmetricMMatchExpression, Matcher, MMatchExpression };
 
@@ -13,7 +13,8 @@ export const defaultMatchers = {
 const { isArray } = Array;
 const isString = (value: any): value is string => typeof value === 'string';
 
-export const asArray = <T>(value: T | Array<T>): Array<T> => (!isArray(value) ? [value] : value);
+export const asArray = <T>(value: T | null | undefined | Array<T | null | undefined>): Array<T> =>
+  value == null ? [] : !isArray(value) ? [value] : value.filter(notNil);
 
 export function expressionMatcher(expr: MMatchExpression, type: 'include' | 'exclude'): Matcher {
   let isMatch;
@@ -26,6 +27,13 @@ export function expressionMatcher(expr: MMatchExpression, type: 'include' | 'exc
 
   return isMatch;
 }
+
+export const mergeMatchers = (
+  a: Matcher | undefined,
+  b: Matcher | undefined,
+): Matcher | undefined => {
+  return a && b ? (path: string) => a(path) && b(path) : a || b;
+};
 
 export function expressionMerger(
   exprA: MMatchExpression,
