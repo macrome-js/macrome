@@ -1,5 +1,11 @@
 import type { FileHandle } from 'fs/promises';
-import type { Accessor, Generator, Change, Annotations } from './types';
+import type {
+  Accessor,
+  Generator,
+  Change,
+  Annotations,
+  AsymmetricWatchmanExpression,
+} from './types';
 
 import { join, dirname, basename, extname, relative } from 'path';
 import { promises as fsPromises } from 'fs';
@@ -7,7 +13,7 @@ import requireFresh from 'import-fresh';
 import findUp from 'find-up';
 import { map, flat, flatMap } from 'iter-tools-es';
 
-import { WatchmanClient, expressionFromMatchable, dumbTraverse } from './watchman';
+import { WatchmanClient, standaloneQuery, matchExpr } from './watchman';
 import { Api, GeneratorApi, MapChangeApi } from './apis';
 import { matches } from './matchable';
 import { logger } from './utils/logger';
@@ -232,10 +238,19 @@ export class Macrome {
     }
   }
 
-  async build(): Promise<void> {
+  getBaseExpression(): AsymmetricWatchmanExpression {
     const { alwaysExclude: exclude } = this.options;
 
-    const changes = await dumbTraverse(this.root, exclude, this.accessorsByFileType.keys());
+    const suffixes = [...this.accessorsByFileType.keys()];
+
+    return {
+      exclude: matchExpr(['match', exclude]),
+      include: ['suffix', suffixes],
+    };
+  }
+
+  async build(): Promise<void> {
+    const changes = await standaloneQuery(this.root, this.getBaseExpression());
 
     if (!this.initialized) await this._initialize(changes);
 
@@ -294,24 +309,16 @@ For each initial generated path, remove it if cache mtime is unchanged (build, w
 
     const fields = ['name', 'mtime_ms', 'exists', 'type', 'new'];
 
-    const expression = expressionFromMatchable({
-      exclude,
-    });
+    const expression = this.getBaseExpression();
 
-    const suffix = [...this.accessorsByFileType.keys()];
-
-    const { files: changes, clock: startClock } = await client.query(this.root, {
-      expression,
-      suffix,
-      fields,
-    });
+    const { files: changes, clock: start } = await client.query(this.root, expression, { fields });
 
     if (!this.initialized) await this._initialize(changes);
 
     this.queue = new Queue();
 
     for (const change of changes) {
-      if ((await this.readAnnotations(change.path)) === null) {
+      if (!(await this.readAnnotations(change.path))) {
         this.enqueue(change);
       }
     }
@@ -323,10 +330,10 @@ For each initial generated path, remove it if cache mtime is unchanged (build, w
 
     if (vcsConfig) {
       await client.subscribe(
-        watchRoot,
+        '/',
         'macrome-vcs-lock',
+        { include: ['name', join(vcsConfig.dir, vcsConfig.lock)] },
         {
-          expression: { name: join(vcsConfig.dir, vcsConfig.lock) },
           fields: ['name', 'exists'],
           defer_vcs: false,
         },
@@ -346,14 +353,14 @@ For each initial generated path, remove it if cache mtime is unchanged (build, w
     // generator to run on all its inputs before another generator could begin.
     // This would prevent parallelization.
     await client.subscribe(
-      '/',
+      this.root,
       'macrome-main',
+      expression,
       {
-        expression,
         drop: ['vcs_lock_held'],
         defer_vcs: false, // for consistency use our version
         fields,
-        since: startClock,
+        since: start,
       },
       async (changes) => {
         if (this.queue === null) {
@@ -381,9 +388,7 @@ For each initial generated path, remove it if cache mtime is unchanged (build, w
   }
 
   async clean(): Promise<void> {
-    const { alwaysExclude: exclude } = this.options;
-
-    const files = await dumbTraverse(this.root, exclude, this.accessorsByFileType.keys());
+    const files = await standaloneQuery(this.root, this.getBaseExpression());
 
     for (const { path } of files) {
       if ((await this.readAnnotations(path)) != null) {

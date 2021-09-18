@@ -1,12 +1,10 @@
 import type { ReadOptions } from '../types';
 import type { FileHandle } from 'fs/promises';
-import type { ReadStream } from 'fs';
+import type { Dirent, ReadStream } from 'fs';
 
 import { join } from 'path';
 import { promises as fsPromises, createReadStream as fsCreateReadStream } from 'fs';
 import Queue from '@iter-tools/queue';
-
-import { expressionMatcher } from '../matchable';
 
 const { opendir } = fsPromises;
 
@@ -27,11 +25,12 @@ export async function createReadStream(path: string | FileHandle): Promise<ReadS
 
 export async function* recursiveReadFiles(
   root: string,
-  exclude?: string | Array<string> | null,
-  suffixes?: Iterable<string>,
+  options: {
+    shouldInclude?: (path: string, ent: Dirent) => boolean;
+    shouldExclude?: (path: string, ent: Dirent) => boolean;
+  } = {},
 ): AsyncGenerator<string> {
-  const exclude_ = expressionMatcher(exclude, 'exclude');
-  const suffixes_ = new Set(suffixes);
+  const { shouldInclude = () => true, shouldExclude = () => false } = options;
   const dirQueue = new Queue([root]);
 
   for (const dir of dirQueue) {
@@ -42,14 +41,14 @@ export async function* recursiveReadFiles(
       const isDir = ent.isDirectory();
       const isFile = ent.isFile();
 
-      if ((!isDir && !isFile) || exclude_(path)) {
+      if ((!isDir && !isFile) || shouldExclude(path, ent)) {
         continue;
       }
 
       if (isDir) {
         dirQueue.push(path);
       } else {
-        if (suffixes_.has(path)) {
+        if (shouldInclude(path, ent) && !shouldExclude(path, ent)) {
           yield path;
         }
       }

@@ -2,14 +2,19 @@
  * Simulate watchman's expression matching engine
  */
 
-import { matcher } from 'micromatch';
+import { matcher as mMatcher } from 'micromatch';
+import ignoreFactory from 'ignore';
 import { extname } from 'path';
 import { asArray } from './matchable';
 import { Matcher } from './types';
 
 const { isArray } = Array;
 
-export function matchExpression(expr: unknown): Matcher {
+const ignoreFrom = (patterns: string | Array<string>) => {
+  return ignoreFactory().add(patterns as any);
+};
+
+export function getMatcher(expr: unknown): Matcher {
   if (typeof expr === 'string') {
     switch (expr) {
       default:
@@ -25,15 +30,15 @@ export function matchExpression(expr: unknown): Matcher {
     switch (type) {
       case 'not': {
         const [expr] = args;
-        const matcher = matchExpression(expr);
+        const matcher = getMatcher(expr);
         return (path) => !matcher(path);
       }
       case 'all': {
-        const matchers = args.map(matchExpression);
+        const matchers = args.map(getMatcher);
         return (path) => matchers.every((matcher) => matcher(path));
       }
       case 'any': {
-        const matchers = args.map(matchExpression);
+        const matchers = args.map(getMatcher);
         return (path) => !!matchers.find((matcher) => matcher(path));
       }
       case 'suffix': {
@@ -46,8 +51,23 @@ export function matchExpression(expr: unknown): Matcher {
         const names = new Set(asArray(_names));
         return (path) => names.has(path);
       }
-      // case 'mmatch': ???
-      // watchman can't actually do this, so we'd essentially have to factor this out of expressions
+      // case 'type': {
+      //   // ???
+      //   const [type] = args;
+      //   switch(type) {
+      //     case 'f': return (_, stats: Stats) => stats.isDirectory()
+      //   }
+      // }
+      case 'match': {
+        const [patterns] = args;
+        const ignore = ignoreFrom(patterns);
+        return (path) => ignore.ignores(path);
+      }
+      case 'mmatch': {
+        const [pattern] = args;
+        const matcher = Array.isArray(pattern) ? mMatcher(pattern.join('|')) : mMatcher(pattern);
+        return (path) => matcher(path);
+      }
       default:
         throw new TypeError(`${type} is not a valid type of expression`);
     }

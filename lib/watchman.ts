@@ -1,4 +1,4 @@
-import type { Change } from './types';
+import type { AsymmetricWatchmanExpression, Change, WatchmanExpression } from './types';
 
 import { relative, join } from 'path';
 import invariant from 'invariant';
@@ -8,8 +8,8 @@ import { when, map, asyncFlatMap, asyncToArray, execPipe } from 'iter-tools-es';
 import { promises as fsPromises } from 'fs';
 import { recursiveReadFiles } from './utils/fs';
 
-import { Matchable } from './matchable';
 import { logger as baseLogger } from './utils/logger';
+import { getMatcher } from './expression-engine';
 
 const { stat } = fsPromises;
 
@@ -17,19 +17,22 @@ const logger = baseLogger.get('watchman');
 
 const matchSettings = {
   includedotfiles: true,
-  noescape: true,
 };
 
-function noneOf(files: Iterable<Array<any>>) {
-  const files_ = [...files];
+export const matchExpr = (expr: Array<unknown>): Array<unknown> => [
+  ...expr,
+  'wholename',
+  matchSettings,
+];
+
+function noneOf(files: Iterable<Array<any>> | undefined) {
+  const files_ = files && [...files];
   return files_ && files_.length ? [['not', ['anyof', ...files_]]] : [];
 }
 
 type QueryOptions = {
-  expression: any;
   since?: string;
   fields?: Array<string>;
-  suffixx?: string | Array<string>; // this is wrong. use suffix expression term
 };
 
 type SubscriptionOptions = QueryOptions & {
@@ -38,11 +41,12 @@ type SubscriptionOptions = QueryOptions & {
   defer_vcs?: boolean;
 };
 
-export function expressionFromMatchable(matchable: Matchable): any {
-  const { include, exclude } = matchable;
-  const fileExpr = (glob: string) => ['match', glob, 'wholename', matchSettings];
+export function symmetricExpressionFromAsymmetric(
+  asymmetric: AsymmetricWatchmanExpression,
+): WatchmanExpression {
+  const { include, exclude } = asymmetric;
 
-  return ['allof', ['type', 'f'], ...noneOf(map(fileExpr, exclude)), ...map(fileExpr, include)];
+  return ['allof', ...noneOf(exclude), ...map(fileExpr, include)];
 }
 
 type SubscriptionEvent = {
@@ -75,7 +79,7 @@ class WatchmanSubscription {
       }));
 
       if (subscription && files && files.length) await this.onEvent(files_);
-    } catch (e) {
+    } catch (e: any) {
       // TODO use new EventEmitter({ captureRejections: true }) once stable
       logger.error(e.stack);
     }
@@ -135,7 +139,7 @@ export class WatchmanClient extends BaseWatchmanClient {
             resolve(resp);
           }
         });
-      } catch (e) {
+      } catch (e: any) {
         e.message += `\nCommand: ${JSON.stringify(fullCommand, null, 2)}`;
         throw e;
       }
@@ -160,33 +164,38 @@ export class WatchmanClient extends BaseWatchmanClient {
     return await this.command('clock', this.watchRoot);
   }
 
-  async query(path: string, options: QueryOptions): Promise<any> {
-    const { expression, ...options_ } = options;
-
+  async query(
+    path: string,
+    expression?: AsymmetricWatchmanExpression | null,
+    options?: QueryOptions,
+  ): Promise<any> {
     invariant(this.watchRoot, 'You must call watchman.watchProject() before watchman.query()');
 
-    const response = await this.command('query', this.watchRoot, {
-      ...options_,
+    return await this.command('query', this.watchRoot, {
+      ...options,
       relative_root: relative(this.watchRoot, join(this.root, path)),
       ...when(expression, { expression }),
     });
-    return response;
   }
 
   async subscribe(
     path: string,
     subscriptionName: string,
+    expression: AsymmetricWatchmanExpression,
     options: SubscriptionOptions,
     onEvent: OnEvent,
   ): Promise<WatchmanSubscription> {
-    const { expression, ...options_ } = options;
-
     invariant(this.watchRoot, 'You must call watchman.watchProject() before watchman.subscribe()');
 
     const response = await this.command('subscribe', this.watchRoot, subscriptionName, {
-      ...options_,
+      ...options,
       relative_root: relative(this.watchRoot, join(this.root, path)),
-      ...when(expression, { expression }),
+      // what is something?
+      // I need to figure out how to handle exclusion of directories excluding their contents
+      // i.e. symmetricFromAsymmetric
+      // use regex? (anchor at beginning, at end match anchor or path.sep)
+      // use directory?
+      ...when(expression, { expression: _something }),
     });
 
     const subscription = new WatchmanSubscription(response, onEvent);
@@ -195,20 +204,19 @@ export class WatchmanClient extends BaseWatchmanClient {
 
     return subscription;
   }
-
-  async flushSubscriptions(options = { sync_timeout: 2000 }): Promise<any> {
-    return await this.command('flush-subscriptions', this.watchRoot, { ...options });
-  }
 }
 
 // Mimic behavior of watchman's initial build so that `macdrome build` does not rely on the watchman service
-export async function dumbTraverse(
+export async function standaloneQuery(
   root: string,
-  exclude?: string | Array<string> | null,
-  suffixes?: Iterable<string>,
+  expression?: AsymmetricWatchmanExpression | null,
 ): Promise<Array<Change>> {
+  const { include, exclude } = expression || {};
   return await execPipe(
-    recursiveReadFiles(root, exclude, suffixes),
+    recursiveReadFiles(root, {
+      shouldInclude: getMatcher(include),
+      shouldExclude: getMatcher(exclude),
+    }),
     // TODO asyncFlatMapParallel once it's back
     asyncFlatMap(async (path) => {
       try {

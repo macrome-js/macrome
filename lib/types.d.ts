@@ -47,7 +47,7 @@ export interface Accessor {
 
 export type Matcher = (path: string) => boolean;
 
-export type MatchExpression = Array<string> | string | null | undefined;
+export type MMatchExpression = Array<string> | string | null | undefined;
 
 /**
  * If include is nullish, everything is presumed to be included.
@@ -56,12 +56,24 @@ export type MatchExpression = Array<string> | string | null | undefined;
  * A directory which is not included will still be traversed as files within it could be.
  * If you wish to omit traversal of an entire directory, just exclude it.
  */
-export type Matchable = {
-  include?: MatchExpression;
-  exclude?: MatchExpression;
+export type AsymmetricMMatchExpression = {
+  include?: MMatchExpression;
+  exclude?: MMatchExpression;
 };
 
-export interface Generator<T> extends Matchable {
+export type WatchmanExpression = Array<unknown>;
+
+// An expression made up of watchman terms
+// e.g. https://facebook.github.io/watchman/docs/expr/allof.html
+// Watchman can already do this purely within its expression syntax but this is a good shorthand.
+// The asymmetric aspect is that excluding a directory is not the same as not including it.
+// An explicitly excluded directory need not be traversed.
+export type AsymmetricWatchmanExpression = {
+  include?: WatchmanExpression;
+  exclude?: WatchmanExpression;
+};
+
+export interface Generator<T> extends AsymmetricMMatchExpression {
   // eslint-disable-next-line @typescript-eslint/no-misused-new
   new (options: Record<string, any>): Generator<T>;
 

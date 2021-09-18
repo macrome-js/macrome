@@ -1,25 +1,21 @@
+import type { AsymmetricWatchmanExpression, Change, WatchmanExpression } from './types';
 import { Client as BaseWatchmanClient } from 'fb-watchman';
-import { Matchable } from './types';
-declare type SubscriptionOptions = {
-    expression: any;
+export declare const matchExpr: (expr: Array<unknown>) => Array<unknown>;
+declare type QueryOptions = {
     since?: string;
     fields?: Array<string>;
-    drop?: Array<string>;
-    defer?: Array<string>;
+};
+declare type SubscriptionOptions = QueryOptions & {
+    drop?: string | Array<string>;
+    defer?: string | Array<string>;
     defer_vcs?: boolean;
-    relative_root?: string;
 };
-declare type File = {
-    exists: boolean;
-    new: boolean;
-    name: string;
-};
-export declare function expressionFromMatchable(matchable: Matchable): any;
+export declare function symmetricExpressionFromAsymmetric(asymmetric: AsymmetricWatchmanExpression): WatchmanExpression;
 declare type SubscriptionEvent = {
     subscription: string;
-    files: Array<File>;
+    files: Array<any>;
 };
-declare type OnEvent = (files: Array<File>) => Promise<unknown>;
+declare type OnEvent = (changes: Array<Change>) => Promise<unknown>;
 declare class WatchmanSubscription {
     name: string;
     onEvent: OnEvent;
@@ -30,17 +26,22 @@ export declare class WatchmanClient extends BaseWatchmanClient {
     root: string;
     watchRoot: string;
     subscriptions: Map<string, WatchmanSubscription>;
+    private _capabilities;
     constructor(root: string);
     get rootRelative(): string | null;
+    get capabilities(): Record<string, boolean>;
+    command(command: string, ...args: Array<any>): Promise<any>;
     watchProject(path: string): Promise<any>;
     version(options?: {
         required?: Array<string>;
-    }): Promise<any>;
+        optional?: Array<string>;
+    }): Promise<{
+        version: string;
+        capabilities: Record<string, boolean>;
+    }>;
     clock(): Promise<any>;
-    flushSubscriptions(options?: {
-        sync_timeout: number;
-    }): Promise<any>;
-    subscribe(path: string, subscriptionName: string, options: SubscriptionOptions, onEvent: OnEvent): Promise<WatchmanSubscription>;
-    command(command: string, ...args: Array<any>): Promise<any>;
+    query(path: string, expression?: AsymmetricWatchmanExpression | null, options?: QueryOptions): Promise<any>;
+    subscribe(path: string, subscriptionName: string, expression: AsymmetricWatchmanExpression, options: SubscriptionOptions, onEvent: OnEvent): Promise<WatchmanSubscription>;
 }
+export declare function standaloneQuery(root: string, expression?: AsymmetricWatchmanExpression | null): Promise<Array<Change>>;
 export {};

@@ -1,9 +1,9 @@
-import type { Matchable, Matcher, MatchExpression } from './types';
+import type { AsymmetricMMatchExpression, Matcher, MMatchExpression } from './types';
 
 import { matcher as mmMatcher } from 'micromatch';
 import { filter, joinWithSeq, stringFrom } from 'iter-tools-es';
 
-export type { Matchable, Matcher, MatchExpression };
+export type { AsymmetricMMatchExpression, Matcher, MMatchExpression };
 
 export const defaultMatchers = {
   include: (): boolean => true,
@@ -15,7 +15,7 @@ const isString = (value: any): value is string => typeof value === 'string';
 
 export const asArray = <T>(value: T | Array<T>): Array<T> => (!isArray(value) ? [value] : value);
 
-export function expressionMatcher(expr: MatchExpression, type: 'include' | 'exclude'): Matcher {
+export function expressionMatcher(expr: MMatchExpression, type: 'include' | 'exclude'): Matcher {
   let isMatch;
 
   if (expr == null || (isArray(expr) && !expr.length)) isMatch = defaultMatchers[type];
@@ -27,16 +27,19 @@ export function expressionMatcher(expr: MatchExpression, type: 'include' | 'excl
   return isMatch;
 }
 
-export function expressionMerger(exprA: MatchExpression, exprB: MatchExpression): MatchExpression {
+export function expressionMerger(
+  exprA: MMatchExpression,
+  exprB: MMatchExpression,
+): MMatchExpression {
   if (exprB == null) return exprA;
   if (exprA == null) return exprB;
 
   return [...asArray(exprA), ...asArray(exprB)];
 }
 
-const matchableMatchers: WeakMap<Matchable, Matcher> = new WeakMap();
+const matchableMatchers: WeakMap<AsymmetricMMatchExpression, Matcher> = new WeakMap();
 
-export function matcher(matchable: Matchable): Matcher {
+export function matcher(matchable: AsymmetricMMatchExpression): Matcher {
   if (!matchableMatchers.has(matchable)) {
     const includeMatcher = expressionMatcher(matchable.include, 'include');
     const excludeMatcher = expressionMatcher(matchable.exclude, 'exclude');
@@ -49,6 +52,6 @@ export function matcher(matchable: Matchable): Matcher {
   return matchableMatchers.get(matchable)!;
 }
 
-export function matches(path: string, matchable: Matchable): boolean {
+export function matches(path: string, matchable: AsymmetricMMatchExpression): boolean {
   return matcher(matchable)(path);
 }
