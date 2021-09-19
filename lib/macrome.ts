@@ -82,24 +82,15 @@ export class Macrome {
     );
   }
 
-  private async _initialize(initialFiles: Array<Change>) {
+  protected async initialize(): Promise<void> {
     for (const generatorPath of this.options.generators.keys()) {
       await this.instantiateGenerators(generatorPath);
-    }
-
-    for (const { path, mtimeMs } of initialFiles) {
-      const annotations = await this.readAnnotations(path);
-      fsCache.set(path, {
-        mtimeMs,
-        annotations,
-        generatedPaths: new Set(),
-      });
     }
 
     this.initialized = true;
   }
 
-  private get generatorInstances() {
+  protected get generatorInstances(): IterableIterator<Generator<unknown>> {
     return flat(1, this.generators.values());
   }
 
@@ -107,12 +98,7 @@ export class Macrome {
     return logger;
   }
 
-  enqueue(change: Change): void {
-    this.queue!.push(change);
-    fsCache.set(change.path, {});
-  }
-
-  async instantiateGenerators(generatorPath: string): Promise<void> {
+  protected async instantiateGenerators(generatorPath: string): Promise<void> {
     const Generator: Generator<unknown> = requireFresh(generatorPath);
 
     for (const generator of get(this.generators, generatorPath, [])) {
@@ -143,13 +129,15 @@ export class Macrome {
     return this.accessorsByFileType.get(ext) || null;
   }
 
-  async readAnnotations(
+  async getAnnotations(
     path: string,
     { handle }: { handle?: FileHandle | null } = {},
   ): Promise<Annotations | null> {
     const accessor = this.accessorsByFileType.get(extname(path).slice(1));
+    const cacheEntry = fsCache.get(path);
 
     if (!accessor) return null;
+    if (cacheEntry) return cacheEntry.annotations;
 
     const resolved = handle != null ? handle : this.resolve(path);
     return await accessor.readAnnotations(resolved);
@@ -164,6 +152,32 @@ export class Macrome {
         cb(generator);
       }
     }
+  }
+
+  protected getBaseExpression(): AsymmetricMMatchExpressionWithSuffixes {
+    const { alwaysExclude: exclude } = this.options;
+
+    return {
+      suffixes: [...this.accessorsByFileType.keys()],
+      exclude,
+    };
+  }
+
+  async enqueue(change: Change): Promise<void> {
+    const { path } = change;
+
+    if (change.exists) {
+      const { mtimeMs } = change;
+      const cacheEntry = fsCache.get(path);
+      const generatedPaths = cacheEntry ? cacheEntry.generatedPaths : new Set<string>();
+      const annotations = await this.getAnnotations(path);
+
+      fsCache.set(path, { path, mtimeMs, annotations, generatedPaths });
+    } else {
+      fsCache.delete(path);
+    }
+
+    this.queue!.push(change);
   }
 
   // Where the magic happens.
@@ -191,21 +205,27 @@ export class Macrome {
       for (const change of queue!) {
         const { path } = change;
 
-        const { generatedPaths } = fsCache.get(path)!;
+        const cacheItem = fsCache.get(path)!;
+        const { generatedPaths: prevGeneratedPaths } = cacheItem;
+        const generatedPaths = (cacheItem.generatedPaths = new Set());
 
         if (!change.exists) {
           // Remove the root file and files it caused to be generated
-          for (const path of generatedPaths) {
-            if (path !== change.path && (await this.readAnnotations(path)) !== null) {
+          for (const prevPath of prevGeneratedPaths) {
+            // Ensure the user hasn't deleted our annotations and started manually editing this file
+            if ((await this.getAnnotations(prevPath)) !== null) {
               await unlink(this.resolve(path));
+
+              await this.enqueue({
+                path: prevPath,
+                exists: false,
+              });
             }
           }
-          // Remove any map results the file made
+          // Free any map results the file made
           this.forMatchingGenerators(path, (generator) => {
             generatorsMeta.get(generator)!.mappings.delete(path);
           });
-
-          await unlink(path);
         } else {
           // Generator loop is inside change queue loop
           for (const generator of generatorInstances) {
@@ -218,9 +238,20 @@ export class Macrome {
               // generator.map()
               const mapResult = generator.map ? await generator.map(api, change) : change;
 
-              mappings.set(change.path, mapResult);
-
               api.destroy();
+
+              mappings.set(change.path, mapResult);
+            }
+          }
+
+          for (const path of prevGeneratedPaths) {
+            if (!generatedPaths.has(path)) {
+              await unlink(this.resolve(path));
+
+              await this.enqueue({
+                path,
+                exists: false,
+              });
             }
           }
         }
@@ -238,40 +269,29 @@ export class Macrome {
     }
   }
 
-  getBaseExpression(): AsymmetricMMatchExpressionWithSuffixes {
-    const { alwaysExclude: exclude } = this.options;
-
-    return {
-      suffixes: [...this.accessorsByFileType.keys()],
-      exclude,
-    };
-  }
-
   async build(): Promise<void> {
     const changes = await standaloneQuery(this.root, this.getBaseExpression());
 
-    if (!this.initialized) await this._initialize(changes);
+    if (!this.initialized) await this.initialize();
 
     this.queue = new Queue();
 
     for (const change of changes) {
-      if ((await this.readAnnotations(change.path)) === null) {
-        this.enqueue(change);
+      // reading of annotations already happens in enque
+      // instead use a read-through cache?
+      if ((await this.getAnnotations(change.path)) === null) {
+        await this.enqueue(change);
       }
     }
 
     await this.processChanges();
+
     this.queue = null;
+
+    for (const change of changes) {
+      //
+    }
   }
-
-  /*
-
-Initial traverse (build: mine, watch: watchman)
-Fill cache with initial paths (mtime, annotations)
-Process non-generated files (fill cache with generatedFiles)
-For each initial generated path, remove it if cache mtime is unchanged (build, watch initial)
-
-  */
 
   async watch(): Promise<void> {
     const { root, vcsConfig, watchRoot } = this;
@@ -309,13 +329,13 @@ For each initial generated path, remove it if cache mtime is unchanged (build, w
 
     const { files: changes, clock: start } = await client.query(this.root, expression, { fields });
 
-    if (!this.initialized) await this._initialize(changes);
+    if (!this.initialized) await this.initialize();
 
     this.queue = new Queue();
 
     for (const change of changes) {
-      if (!(await this.readAnnotations(change.path))) {
-        this.enqueue(change);
+      if (!(await this.getAnnotations(change.path))) {
+        await this.enqueue(change);
       }
     }
 
@@ -365,10 +385,10 @@ For each initial generated path, remove it if cache mtime is unchanged (build, w
           this.queue = null;
         } else {
           for (const change of changes) {
-            const { path, exists, mtimeMs } = change;
+            const { path } = change;
             // filter out "echo" changes: those we already enqueued without waiting for the watcher
-            if (fsCache.get(path)?.mtimeMs !== mtimeMs || (!exists && fsCache.has(path))) {
-              this.enqueue(change);
+            if (change.exists ? fsCache.get(path)?.mtimeMs !== change.mtimeMs : fsCache.has(path)) {
+              await this.enqueue(change);
             }
           }
         }
@@ -387,7 +407,7 @@ For each initial generated path, remove it if cache mtime is unchanged (build, w
     const files = await standaloneQuery(this.root, this.getBaseExpression());
 
     for (const { path } of files) {
-      if ((await this.readAnnotations(path)) != null) {
+      if ((await this.getAnnotations(path)) != null) {
         await unlink(this.resolve(path));
       }
     }

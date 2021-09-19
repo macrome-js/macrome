@@ -49,7 +49,7 @@ export class Api {
     return new ApiError(error.message, verb);
   }
 
-  getAnnotations(_destPath?: string): Map<string, any> {
+  buildAnnotations(_destPath?: string): Map<string, any> {
     return new Map<string, any>([['macrome', true]]);
   }
 
@@ -61,11 +61,8 @@ export class Api {
     return this[_].macrome.accessorFor(path);
   }
 
-  async readAnnotations(
-    path: string,
-    options: { handle: FileHandle },
-  ): Promise<Annotations | null> {
-    return await this[_].macrome.readAnnotations(path, options);
+  async getAnnotations(path: string, options: { handle: FileHandle }): Promise<Annotations | null> {
+    return await this[_].macrome.getAnnotations(path, options);
   }
 
   async read(path: string, options: ReadOptions): Promise<string> {
@@ -78,7 +75,7 @@ export class Api {
       const result = await accessor.read(this.resolve(path), { encoding, ..._options });
 
       return result.content;
-    } catch (e) {
+    } catch (e: any) {
       throw this.decorateError(e, 'read');
     }
   }
@@ -91,7 +88,7 @@ export class Api {
     const accessor = this.accessorFor(path)!;
     const file: File = {
       header: {
-        annotations: this.getAnnotations(path),
+        annotations: this.buildAnnotations(path),
       },
       content,
     };
@@ -118,7 +115,7 @@ export class Api {
         new: new_,
         mtimeMs,
       });
-    } catch (e) {
+    } catch (e: any) {
       throw this.decorateError(e, 'write');
     } finally {
       handle?.close();
@@ -143,10 +140,13 @@ export class GeneratorApi extends Api {
     return new GeneratorApi(macrome, generatorPath);
   }
 
-  getAnnotations(_destPath?: string): Map<string, any> {
+  buildAnnotations(_destPath?: string): Map<string, any> {
     const { generatorPath } = this[_];
 
-    return new Map<string, any>([...super.getAnnotations(), ['generated-by', `/${generatorPath}`]]);
+    return new Map<string, any>([
+      ...super.buildAnnotations(),
+      ['generated-by', `/${generatorPath}`],
+    ]);
   }
 }
 
@@ -184,13 +184,13 @@ export class MapChangeApi extends GeneratorApi {
     return new MapApiError(error.message, verb, generatorPath);
   }
 
-  getAnnotations(destPath: string): Map<string, any> {
+  buildAnnotations(destPath: string): Map<string, any> {
     const { macrome } = this[_];
 
     const relPath = relative(dirname(destPath), macrome.root);
 
     return new Map([
-      ...super.getAnnotations(destPath),
+      ...super.buildAnnotations(destPath),
       ['generated-from', relPath.startsWith('.') ? relPath : `./${relPath}`],
     ]);
   }

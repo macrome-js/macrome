@@ -1,5 +1,6 @@
 import { Annotations } from './types';
 declare type CacheEntry = {
+    path: string;
     mtimeMs: number;
     annotations: Annotations | null;
     generatedPaths: Set<string>;

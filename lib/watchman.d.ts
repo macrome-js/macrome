@@ -1,6 +1,5 @@
-import type { AsymmetricWatchmanExpression, Change, WatchmanExpression } from './types';
+import type { AsymmetricMMatchExpressionWithSuffixes, Change, WatchmanExpression } from './types';
 import { Client as BaseWatchmanClient } from 'fb-watchman';
-export declare const matchExpr: (expr: Array<unknown>) => Array<unknown>;
 declare type QueryOptions = {
     since?: string;
     fields?: Array<string>;
@@ -10,7 +9,6 @@ declare type SubscriptionOptions = QueryOptions & {
     defer?: string | Array<string>;
     defer_vcs?: boolean;
 };
-export declare function symmetricExpressionFromAsymmetric(asymmetric: AsymmetricWatchmanExpression): WatchmanExpression;
 declare type SubscriptionEvent = {
     subscription: string;
     files: Array<any>;
@@ -30,6 +28,7 @@ export declare class WatchmanClient extends BaseWatchmanClient {
     constructor(root: string);
     get rootRelative(): string | null;
     get capabilities(): Record<string, boolean>;
+    __expressionFrom(asymmetric: AsymmetricMMatchExpressionWithSuffixes | null | undefined): WatchmanExpression;
     command(command: string, ...args: Array<any>): Promise<any>;
     watchProject(path: string): Promise<any>;
     version(options?: {
@@ -40,8 +39,8 @@ export declare class WatchmanClient extends BaseWatchmanClient {
         capabilities: Record<string, boolean>;
     }>;
     clock(): Promise<any>;
-    query(path: string, expression?: AsymmetricWatchmanExpression | null, options?: QueryOptions): Promise<any>;
-    subscribe(path: string, subscriptionName: string, expression: AsymmetricWatchmanExpression, options: SubscriptionOptions, onEvent: OnEvent): Promise<WatchmanSubscription>;
+    query(path: string, expression?: AsymmetricMMatchExpressionWithSuffixes | null, options?: QueryOptions): Promise<any>;
+    subscribe(path: string, subscriptionName: string, expression: AsymmetricMMatchExpressionWithSuffixes | null, options: SubscriptionOptions, onEvent: OnEvent): Promise<WatchmanSubscription>;
 }
-export declare function standaloneQuery(root: string, expression?: AsymmetricWatchmanExpression | null): Promise<Array<Change>>;
+export declare function standaloneQuery(root: string, expression?: AsymmetricMMatchExpressionWithSuffixes | null): Promise<Array<Change>>;
 export {};

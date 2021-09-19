@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import type { FileHandle } from 'fs/promises';
-import type { Accessor, Generator, Change, Annotations, AsymmetricWatchmanExpression } from './types';
+import type { Accessor, Generator, Change, Annotations, AsymmetricMMatchExpressionWithSuffixes } from './types';
 import { WatchmanClient } from './watchman';
 import { Api, GeneratorApi } from './apis';
 import { Options, BuiltOptions } from './config';
@@ -22,18 +22,18 @@ export declare class Macrome {
     queue: Queue<Change> | null;
     accessorsByFileType: Map<string, Accessor>;
     constructor(apiOptions: Options);
-    private _initialize;
-    private get generatorInstances();
+    protected initialize(): Promise<void>;
+    protected get generatorInstances(): IterableIterator<Generator<unknown>>;
     get logger(): any;
-    enqueue(change: Change): void;
-    instantiateGenerators(generatorPath: string): Promise<void>;
+    protected instantiateGenerators(generatorPath: string): Promise<void>;
     accessorFor(path: string): Accessor | null;
     readAnnotations(path: string, { handle }?: {
         handle?: FileHandle | null;
     }): Promise<Annotations | null>;
     protected forMatchingGenerators(path: string, cb: (generator: Generator<unknown>) => unknown): Promise<void>;
+    protected getBaseExpression(): AsymmetricMMatchExpressionWithSuffixes;
+    enqueue(change: Change): Promise<void>;
     processChanges(): Promise<void>;
-    getBaseExpression(): AsymmetricWatchmanExpression;
     build(): Promise<void>;
     watch(): Promise<void>;
     stopWatching(): void;
