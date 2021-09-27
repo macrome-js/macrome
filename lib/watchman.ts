@@ -26,7 +26,7 @@ const makeMatcher = (expr: MMatchExpression) => {
 };
 
 const compoundExpr = (name: string, ...terms: Array<unknown>) => {
-  return [name, terms.length === 0 ? [] : terms.length === 1 ? terms[0] : ['anyof', terms]];
+  return [name, terms.length === 0 ? [] : terms.length === 1 ? terms[0] : ['anyof', ...terms]];
 };
 
 type QueryOptions = {
@@ -118,21 +118,18 @@ export class WatchmanClient extends BaseWatchmanClient {
     // Watchman doesn't work like that, but we can simulate it by matching prefixes
     // That is: if /foo/bar can match /foo/bar/baz, then the /foo/bar directory is fully excluded
     const dirExpr = (glob: string) => {
-      const re = mm.makeRe(glob).source;
-      if (re[re.length - 1] !== '$') {
-        throw new Error('Expected glob regex to be anchored');
-      }
-      return ['pcre', re.slice(0, -1) + '(/|$)', 'wholename'];
+      const re = mm.makeRe(glob + '/**');
+      return ['pcre', re.source, 'wholename'];
     };
 
     return compoundExpr(
       'allof',
-      ...compoundExpr('not', ...map(dirExpr, asArray(exclude))),
+      compoundExpr('not', ...map(dirExpr, asArray(exclude))),
       ...map(fileExpr, asArray(include)),
       // See https://facebook.github.io/watchman/docs/expr/suffix.html#suffix-set
-      ...(suffixSet
+      suffixSet
         ? compoundExpr('suffix', ...suffixes)
-        : compoundExpr('anyof', ...suffixes.map((suffix) => ['suffix', suffix]))),
+        : compoundExpr('anyof', ...suffixes.map((suffix) => ['suffix', suffix])),
     );
   }
 
@@ -227,7 +224,10 @@ export async function standaloneQuery(
 ): Promise<Array<Change>> {
   const { include, exclude, suffixes } = expression || {};
   const suffixSet = new Set(suffixes);
-  const shouldInclude = mergeMatchers((path) => suffixSet.has(extname(path)), makeMatcher(include));
+  const shouldInclude = mergeMatchers(
+    (path) => suffixSet.has(extname(path).slice(1)),
+    makeMatcher(include),
+  );
   const shouldExclude = makeMatcher(exclude);
 
   return await execPipe(

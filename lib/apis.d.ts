@@ -20,10 +20,10 @@ export declare class Api {
     protected __assertNotDestroyed(methodName: string): void;
     destroy(): void;
     protected decorateError(error: Error, verb: string): Error;
-    getAnnotations(_destPath?: string): Map<string, any>;
+    buildAnnotations(_destPath?: string): Map<string, any>;
     resolve(path: string): string;
     accessorFor(path: string): Accessor | null;
-    readAnnotations(path: string, options: {
+    getAnnotations(path: string, options: {
         handle: FileHandle;
     }): Promise<Annotations | null>;
     read(path: string, options: ReadOptions): Promise<string>;
@@ -36,7 +36,7 @@ export declare class GeneratorApi extends Api {
     protected [_]: GeneratorApiProtected;
     constructor(macrome: Macrome, generatorPath: string);
     static fromApi(api: Api, generatorPath: string): GeneratorApi;
-    getAnnotations(_destPath?: string): Map<string, any>;
+    buildAnnotations(_destPath?: string): Map<string, any>;
 }
 export declare class MapApiError extends ApiError {
     generatorPath: string;
@@ -51,6 +51,6 @@ export declare class MapChangeApi extends GeneratorApi {
     constructor(macrome: Macrome, generatorPath: string, change: Change);
     static fromGeneratorApi(generatorApi: GeneratorApi, change: Change): MapChangeApi;
     protected decorateError(error: Error, verb: string): MapApiError;
-    getAnnotations(destPath: string): Map<string, any>;
+    buildAnnotations(destPath: string): Map<string, any>;
 }
 export {};

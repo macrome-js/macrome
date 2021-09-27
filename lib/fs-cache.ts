@@ -1,6 +1,6 @@
 import { Annotations } from './types';
 
-type CacheEntry = {
+export type CacheEntry = {
   path: string;
   mtimeMs: number;
   annotations: Annotations | null;

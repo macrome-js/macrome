@@ -6,11 +6,11 @@ const { run, hasOutput, outputLines } = require('../lib/utils/shell');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function isClean(dir) {
-  return !hasOutput('git', ['status', '-s', dir]);
+  return !hasOutput('git', ['status', '-s', '--', dir]);
 }
 
-function gitStatus() {
-  return outputLines('git', ['status', '-s', '.'])
+function gitStatus(dir) {
+  return outputLines('git', ['status', '-s', '--', dir])
     .map((line) => stripAnsi(line))
     .slice(0, -1)
     .sort();

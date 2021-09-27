@@ -28,7 +28,7 @@ export class CAccessor implements Accessor {
   commentParser = new CCommentParser();
 
   async readAnnotations(path: string | FileHandle): Promise<Annotations | null> {
-    const match = await exec(headerExp, createReadStream(path));
+    const match = await exec(headerExp, await createReadStream(path));
     return match && this.commentParser.parse(match[2]).annotations;
   }
 

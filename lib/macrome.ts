@@ -7,11 +7,12 @@ import type {
   AsymmetricMMatchExpressionWithSuffixes,
 } from './types';
 
-import { join, dirname, basename, extname, relative } from 'path';
+import { join, dirname, basename, extname, relative, resolve } from 'path';
 import { promises as fsPromises } from 'fs';
 import requireFresh from 'import-fresh';
 import findUp from 'find-up';
-import { map, flat, flatMap } from 'iter-tools-es';
+import { map, flat, flatMap, wrap } from 'iter-tools-es';
+import Queue from '@iter-tools/queue';
 
 import { WatchmanClient, standaloneQuery } from './watchman';
 import { Api, GeneratorApi, MapChangeApi } from './apis';
@@ -22,28 +23,27 @@ import { buildOptions, Options, BuiltOptions } from './config';
 import accessors from './accessors';
 import { vcsConfigs, VCSConfig } from './vcs-configs';
 import { get } from './utils/map';
-import Queue from '@iter-tools/queue';
-import { fsCache } from './fs-cache';
+import { CacheEntry, fsCache } from './fs-cache';
 
 const { unlink } = fsPromises;
 
+type GeneratorMeta = {
+  api: GeneratorApi;
+  mappings: Map<string, unknown>; // path -> map() result
+};
+
 export class Macrome {
   options: BuiltOptions;
-  initialized = false;
+  initialized = false; // Has initialize() been run
+  progressive = false; // Are we watching for incremental updates
   root: string;
   watchRoot: string;
   api: Api;
   vcsConfig: VCSConfig | null = null;
   watchClient: WatchmanClient | null = null;
   generators: Map<string, Array<Generator<unknown>>>;
-  generatorsMeta: WeakMap<
-    Generator<unknown>,
-    {
-      api: GeneratorApi;
-      mappings: Map<string, unknown>; // path -> map() result
-    }
-  >;
-  queue: Queue<Change> | null = null;
+  generatorsMeta: WeakMap<Generator<unknown>, GeneratorMeta>;
+  queue: Queue<{ change: Change; cacheEntry: CacheEntry | null }> | null = null;
   accessorsByFileType: Map<string, Accessor>;
 
   constructor(apiOptions: Options) {
@@ -145,11 +145,13 @@ export class Macrome {
 
   protected async forMatchingGenerators(
     path: string,
-    cb: (generator: Generator<unknown>) => unknown,
+    cb: (generator: Generator<unknown>, meta: GeneratorMeta) => unknown,
   ): Promise<void> {
+    const { generatorsMeta } = this;
+
     for (const generator of this.generatorInstances) {
       if (matches(path, generator)) {
-        cb(generator);
+        await cb(generator, generatorsMeta.get(generator)!);
       }
     }
   }
@@ -165,102 +167,108 @@ export class Macrome {
 
   async enqueue(change: Change): Promise<void> {
     const { path } = change;
+    const cacheEntry = fsCache.get(path) || null;
+
+    if (change.exists ? cacheEntry?.mtimeMs === change.mtimeMs : !cacheEntry) {
+      // This is an "echo" change: the watcher is re-reporting it but it was already enqueued.
+      return;
+    }
 
     if (change.exists) {
+      const { progressive } = this;
       const { mtimeMs } = change;
-      const cacheEntry = fsCache.get(path);
       const generatedPaths = cacheEntry ? cacheEntry.generatedPaths : new Set<string>();
       const annotations = await this.getAnnotations(path);
+      const generatedFrom = annotations && annotations.get('generatedfrom');
+
+      if (generatedFrom && !fsCache.has(resolve(path, generatedFrom))) {
+        if (!progressive) {
+          // In the initial build we ignore changes which should be caused by other changes
+          return;
+        } else {
+          // I don't think this should happen and I don't know what it would mean if it did
+          logger.warn(
+            `Processing \`${path}\` which is generated from \`${generatedFrom}\` which does not exist`,
+          );
+        }
+      }
 
       fsCache.set(path, { path, mtimeMs, annotations, generatedPaths });
     } else {
       fsCache.delete(path);
     }
 
-    this.queue!.push(change);
+    this.queue!.push({ change, cacheEntry });
   }
 
   // Where the magic happens.
   async processChanges(): Promise<void> {
-    // Assumption: two input changes will not both write the same output file
-    //   we could detect this and error (or warn and let the later gen overwrite?)
-    //     allows us to parallelize
+    const { queue, options, generatorsMeta } = this;
+    const processedPaths = []; // just for debugging
 
-    const { queue, options, generatorInstances, generatorsMeta } = this;
+    if (!queue) {
+      throw new Error('processChanges() called with no queue');
+    }
 
     const { settleTTL } = options;
     let ttl = settleTTL;
     // TODO parallelize
     // may want to factor out runners, parallel and non-parallel a la jest
-    while (true) {
+    while (queue.size) {
       // Handle bouncing between states: map -> reduce -> map -> reduce
-      // We always enqueue changes before the watcher reports them, primarily to
-      // ensure that this error is never subject to a race condition.
       if (ttl === 0) {
+        this.queue = null;
         throw new Error(
           `Macrome state has not settled after ${settleTTL} cycles, likely indicating an infinite loop`,
         );
       }
 
-      for (const change of queue!) {
+      const generatorsToReduce = new Set();
+
+      while (queue.size) {
+        const { change, cacheEntry } = queue.shift()!;
+
         const { path } = change;
+        const prevGeneratedPaths = cacheEntry && cacheEntry.generatedPaths;
+        const generatedPaths = new Set<string>();
 
-        const cacheItem = fsCache.get(path)!;
-        const { generatedPaths: prevGeneratedPaths } = cacheItem;
-        const generatedPaths = (cacheItem.generatedPaths = new Set());
+        if (change.exists) {
+          await this.forMatchingGenerators(path, async (generator, { mappings, api: genApi }) => {
+            // Changes made through this api feed back into the queue
+            const api = MapChangeApi.fromGeneratorApi(genApi, change);
 
-        if (!change.exists) {
-          // Remove the root file and files it caused to be generated
-          for (const prevPath of prevGeneratedPaths) {
-            // Ensure the user hasn't deleted our annotations and started manually editing this file
-            if ((await this.getAnnotations(prevPath)) !== null) {
-              await unlink(this.resolve(path));
+            // generator.map()
+            const mapResult = generator.map ? await generator.map(api, change) : change;
 
-              await this.enqueue({
-                path: prevPath,
-                exists: false,
-              });
-            }
-          }
-          // Free any map results the file made
-          this.forMatchingGenerators(path, (generator) => {
-            generatorsMeta.get(generator)!.mappings.delete(path);
+            api.destroy();
+
+            mappings.set(change.path, mapResult);
+            generatorsToReduce.add(generator);
           });
         } else {
-          // Generator loop is inside change queue loop
-          for (const generator of generatorInstances) {
-            const { mappings, api: genApi } = generatorsMeta.get(generator)!;
+          await this.forMatchingGenerators(path, async (generator, { mappings }) => {
+            // Free any map results the file made
+            mappings.delete(path);
+            generatorsToReduce.add(generator);
+          });
+        }
 
-            if (matches(change.path, generator)) {
-              // Changes made through this api feed back into the queue
-              const api = MapChangeApi.fromGeneratorApi(genApi, change);
+        for (const path of wrap(prevGeneratedPaths)) {
+          // Ensure the user hasn't deleted our annotations and started manually editing this file
+          if (!generatedPaths.has(path) && (await this.getAnnotations(path)) !== null) {
+            await unlink(this.resolve(path));
 
-              // generator.map()
-              const mapResult = generator.map ? await generator.map(api, change) : change;
-
-              api.destroy();
-
-              mappings.set(change.path, mapResult);
-            }
-          }
-
-          for (const path of prevGeneratedPaths) {
-            if (!generatedPaths.has(path)) {
-              await unlink(this.resolve(path));
-
-              await this.enqueue({
-                path,
-                exists: false,
-              });
-            }
+            await this.enqueue({ path, exists: false });
           }
         }
+
+        processedPaths.push(path);
       }
 
       for (const generator of this.generatorInstances) {
-        const { mappings, api } = generatorsMeta.get(generator)!;
-        if (mappings.size) {
-          // what happens if the changes reduce makes are mappable?
+        if (generatorsToReduce.has(generator)) {
+          const { mappings, api } = generatorsMeta.get(generator)!;
+
           await generator.reduce?.(api, mappings);
         }
       }
@@ -277,20 +285,20 @@ export class Macrome {
     this.queue = new Queue();
 
     for (const change of changes) {
-      // reading of annotations already happens in enque
-      // instead use a read-through cache?
-      if ((await this.getAnnotations(change.path)) === null) {
-        await this.enqueue(change);
-      }
+      await this.enqueue(change);
     }
 
     await this.processChanges();
 
-    this.queue = null;
+    for (const { path } of changes) {
+      if (!fsCache.has(path)) {
+        await unlink(this.resolve(path));
 
-    for (const change of changes) {
-      //
+        await this.enqueue({ path, exists: false });
+      }
     }
+
+    this.queue = null;
   }
 
   async watch(): Promise<void> {
@@ -342,6 +350,7 @@ export class Macrome {
     await this.processChanges();
     this.queue = null;
 
+    this.progressive = true;
     logger.notice('Initial generation completed; watching for changes...');
 
     if (vcsConfig) {
@@ -369,7 +378,7 @@ export class Macrome {
     // generator to run on all its inputs before another generator could begin.
     // This would prevent parallelization.
     await client.subscribe(
-      this.root,
+      '/',
       'macrome-main',
       expression,
       {
@@ -379,18 +388,16 @@ export class Macrome {
         since: start,
       },
       async (changes) => {
-        if (this.queue === null) {
-          this.queue = new Queue(changes);
+        const noQueue = this.queue === null;
+        if (noQueue) {
+          this.queue = new Queue();
+        }
+        for (const change of changes) {
+          await this.enqueue(change);
+        }
+        if (noQueue) {
           await this.processChanges();
           this.queue = null;
-        } else {
-          for (const change of changes) {
-            const { path } = change;
-            // filter out "echo" changes: those we already enqueued without waiting for the watcher
-            if (change.exists ? fsCache.get(path)?.mtimeMs !== change.mtimeMs : fsCache.has(path)) {
-              await this.enqueue(change);
-            }
-          }
         }
       },
     );

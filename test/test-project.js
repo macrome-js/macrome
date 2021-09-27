@@ -2,13 +2,11 @@ const { writeFile, unlink } = require('fs').promises;
 const { Macrome } = require('../lib');
 const { run, isClean, gitStatus } = require('./utils');
 
-function testProject(projectRoot) {
+function testProject(root) {
   let macrome;
 
   beforeAll(async () => {
-    process.chdir(projectRoot);
-
-    if (!isClean('.')) {
+    if (!isClean(root)) {
       throw new Error('Test directory was not clean');
     }
 
@@ -16,20 +14,21 @@ function testProject(projectRoot) {
   });
 
   afterAll(async () => {
-    run('git', ['add', '.']);
-    run('git', ['checkout', 'HEAD', '--', projectRoot]);
+    debugger;
+    run('git', ['add', root]);
+    run('git', ['checkout', 'HEAD', '--', root]);
   });
 
   it('cleans', async () => {
     await macrome.clean();
 
-    expect(gitStatus()).toMatchSnapshot();
+    expect(gitStatus(root)).toMatchSnapshot();
   });
 
   it('builds', async () => {
     await macrome.build();
 
-    expect(isClean('.')).toBe(true);
+    expect(isClean(root)).toBe(true);
   });
 
   it('checks', async () => {
@@ -48,11 +47,11 @@ function testProject(projectRoot) {
     });
 
     it('removes them', async () => {
-      expect(isClean('.')).toBe(false);
+      expect(isClean(root)).toBe(false);
 
       await macrome.build();
 
-      expect(isClean('.')).toBe(true);
+      expect(isClean(root)).toBe(true);
     });
   });
 

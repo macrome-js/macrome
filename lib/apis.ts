@@ -100,6 +100,7 @@ export class Api {
       const { mtimeMs } = await handle.stat();
       const new_ = mtimeMs > now; // is there a better way to implement this?
 
+      // if I make this read from the annotations cache
       const annotations = await accessor.readAnnotations(handle);
       if (annotations === null) {
         throw new Error('macrome will not overwrite non-generated files');
@@ -109,6 +110,10 @@ export class Api {
 
       await accessor.write(handle, file, options);
 
+      // We could wait for the watcher to do this, but there are two reasons we don't:
+      // First there may not be a watcher, and we want things to work basically the same way when
+      // the watcher is and is not present. Second we want to ensure that our causally linked
+      // changes are always batched so that we can detect non-terminating cycles.
       macrome.enqueue({
         path,
         exists: true,
@@ -145,7 +150,7 @@ export class GeneratorApi extends Api {
 
     return new Map<string, any>([
       ...super.buildAnnotations(),
-      ['generated-by', `/${generatorPath}`],
+      ['generatedby', `/${generatorPath}`],
     ]);
   }
 }
@@ -191,7 +196,7 @@ export class MapChangeApi extends GeneratorApi {
 
     return new Map([
       ...super.buildAnnotations(destPath),
-      ['generated-from', relPath.startsWith('.') ? relPath : `./${relPath}`],
+      ['generatedfrom', relPath.startsWith('.') ? relPath : `./${relPath}`],
     ]);
   }
 }
