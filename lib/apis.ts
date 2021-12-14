@@ -1,29 +1,27 @@
+import { Errawr, rawr } from 'errawr';
+
 import type { Macrome } from './macrome';
 import type { WriteOptions, ReadOptions, Accessor, File, Change, Annotations } from './types';
 
 import { relative, dirname } from 'path';
 import { promises as fsPromises } from 'fs';
-
-import { buildReadOptions } from './utils/fs';
 import { FileHandle } from 'fs/promises';
+import { buildOptions } from './utils/fs';
 
 const { open } = fsPromises;
 
 const _ = Symbol.for('private members');
 
+class ApiError extends Errawr {
+  get name() {
+    return 'ApiError';
+  }
+}
+
 type ApiProtected = {
   destroyed: boolean;
   macrome: Macrome;
 };
-
-export class ApiError extends Error {
-  verb: string;
-
-  constructor(message: string, verb: string) {
-    super(message);
-    this.verb = verb;
-  }
-}
 
 /**
  * Api is a facade over the Macrome class which exposes the functionality which should be accessible to generators
@@ -46,7 +44,7 @@ export class Api {
   }
 
   protected decorateError(error: Error, verb: string): Error {
-    return new ApiError(error.message, verb);
+    return new ApiError(`macrome ${verb} failed`, { cause: error });
   }
 
   buildAnnotations(_destPath?: string): Map<string, any> {
@@ -61,14 +59,14 @@ export class Api {
     return this[_].macrome.accessorFor(path);
   }
 
-  async getAnnotations(path: string, options: { handle: FileHandle }): Promise<Annotations | null> {
+  async getAnnotations(path: string, options?: { fd?: FileHandle }): Promise<Annotations | null> {
     return await this[_].macrome.getAnnotations(path, options);
   }
 
   async read(path: string, options: ReadOptions): Promise<string> {
     this.__assertNotDestroyed('read');
 
-    const { encoding = 'utf8', ..._options } = buildReadOptions(options);
+    const { encoding = 'utf8', ..._options } = buildOptions(options);
     const accessor = this.accessorFor(path)!;
 
     try {
@@ -81,10 +79,9 @@ export class Api {
   }
 
   async write(path: string, content: string, options: WriteOptions): Promise<void> {
-    const { macrome } = this[_];
-
     this.__assertNotDestroyed('write');
 
+    const { macrome } = this[_];
     const accessor = this.accessorFor(path)!;
     const file: File = {
       header: {
@@ -94,21 +91,21 @@ export class Api {
     };
     const now = Date.now();
 
-    let handle;
+    let fd;
     try {
-      handle = await open(this.resolve(path), 'a+');
-      const { mtimeMs } = await handle.stat();
+      fd = await open(this.resolve(path), 'a+');
+      const { mtimeMs } = await fd.stat();
       const new_ = mtimeMs > now; // is there a better way to implement this?
 
       // if I make this read from the annotations cache
-      const annotations = await accessor.readAnnotations(handle);
+      const annotations = await accessor.readAnnotations(this.resolve(path), { fd });
       if (annotations === null) {
         throw new Error('macrome will not overwrite non-generated files');
       }
 
-      await handle.truncate();
+      await fd.truncate();
 
-      await accessor.write(handle, file, options);
+      await accessor.write(path, file, { ...buildOptions(options), fd });
 
       // We could wait for the watcher to do this, but there are two reasons we don't:
       // First there may not be a watcher, and we want things to work basically the same way when
@@ -123,7 +120,7 @@ export class Api {
     } catch (e: any) {
       throw this.decorateError(e, 'write');
     } finally {
-      handle?.close();
+      fd?.close();
     }
   }
 }
@@ -155,17 +152,6 @@ export class GeneratorApi extends Api {
   }
 }
 
-export class MapApiError extends ApiError {
-  generatorPath: string;
-  destPath?: string;
-
-  constructor(message: string, verb: string, generatorPath: string, destPath?: string) {
-    super(message, verb);
-    this.generatorPath = generatorPath;
-    if (destPath) this.destPath = destPath;
-  }
-}
-
 type MapChangeApiProtected = GeneratorApiProtected & {
   change: Change;
 };
@@ -183,10 +169,13 @@ export class MapChangeApi extends GeneratorApi {
     return new MapChangeApi(macrome, generatorPath, change);
   }
 
-  protected decorateError(error: Error, verb: string): MapApiError {
-    const { generatorPath } = this[_];
+  protected decorateError(error: Error, verb: string): Error {
+    const { generatorPath, change } = this[_];
 
-    return new MapApiError(error.message, verb, generatorPath);
+    return new ApiError(rawr('macrome {{verb}} failed', { rest: true }), {
+      cause: error,
+      info: { verb, generator: generatorPath, change },
+    });
   }
 
   buildAnnotations(destPath: string): Map<string, any> {

@@ -33,8 +33,8 @@ export declare class Macrome {
     get logger(): any;
     protected instantiateGenerators(generatorPath: string): Promise<void>;
     accessorFor(path: string): Accessor | null;
-    getAnnotations(path: string, { handle }?: {
-        handle?: FileHandle | null;
+    getAnnotations(path: string, options?: {
+        fd?: FileHandle;
     }): Promise<Annotations | null>;
     protected forMatchingGenerators(path: string, cb: (generator: Generator<unknown>, meta: GeneratorMeta) => unknown): Promise<void>;
     protected getBaseExpression(): AsymmetricMMatchExpressionWithSuffixes;

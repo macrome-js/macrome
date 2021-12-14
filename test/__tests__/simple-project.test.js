@@ -3,11 +3,19 @@ const { sandboxPath, gitStatus, eventually } = require('../utils');
 
 const { writeFile, readFile, unlink } = require('fs').promises;
 
+jest.setTimeout(300000);
+
 describe('simple project', () => {
-  const test = testProject(sandboxPath('projects/simple-project'));
+  const macrome = testProject(sandboxPath('projects/simple-project'));
 
   describe('watch', () => {
-    test.watchSetup();
+    beforeAll(async () => {
+      await macrome.watch();
+    });
+
+    afterAll(async () => {
+      await macrome.stopWatching();
+    });
 
     it('simple-project.js', async () => {
       const filePath = 'lib/simple-project.js';

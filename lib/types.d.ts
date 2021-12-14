@@ -28,6 +28,7 @@ export type File = {
 export type ReadOptions =
   | BufferEncoding
   | {
+      fd?: FileHandle;
       flags?: string;
       encoding?: BufferEncoding | null;
     };
@@ -35,6 +36,7 @@ export type ReadOptions =
 export type WriteOptions =
   | BufferEncoding
   | {
+      fd?: FileHandle;
       encoding?: BufferEncoding | null;
       mode?: number;
       flag?: string;
@@ -43,11 +45,11 @@ export type WriteOptions =
 export interface Accessor {
   supportedFileTypes: Array<string>;
 
-  readAnnotations(path: string | FileHandle): Promise<Annotations | null>;
+  readAnnotations(path: string, options?: { fd?: FileHandle }): Promise<Annotations | null>;
 
-  read(path: string | FileHandle, options?: ReadOptions): Promise<File>;
+  read(path: string, options?: ReadOptions): Promise<File>;
 
-  write(path: string | FileHandle, file: File, options?: WriteOptions): Promise<void>;
+  write(path: string, file: File, options?: WriteOptions): Promise<void>;
 }
 
 export type Matcher = (path: string) => boolean;

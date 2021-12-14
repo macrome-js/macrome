@@ -1,4 +1,4 @@
-import { dirname } from 'path';
+import { dirname, resolve } from 'path';
 import findUp from 'find-up';
 import requireFresh from 'import-fresh';
 import { map, concat, execPipe } from 'iter-tools-es';
@@ -34,10 +34,12 @@ export type BuiltOptions = {
 const alwaysExclude = ['.git', 'node_modules'];
 
 export function buildOptions(apiOptions: Options = {}): BuiltOptions {
+  let root: string | null = apiOptions.root ? resolve(apiOptions.root) : null;
+
   const configPath =
     apiOptions.configPath === null
       ? null
-      : findUp.sync('macrome.config.js', { cwd: process.cwd() }) || null;
+      : findUp.sync('macrome.config.js', { cwd: root || process.cwd() }) || null;
 
   const configOptions: Options = configPath === null ? {} : requireFresh(configPath);
 
@@ -46,18 +48,20 @@ export function buildOptions(apiOptions: Options = {}): BuiltOptions {
     delete configOptions.configPath;
   }
 
-  const root = apiOptions.root || configOptions.root || (configPath && dirname(configPath));
+  root = root || (configPath && dirname(configPath));
 
   if (!root) {
     throw new Error('No root specified and none could be inferred');
   }
+
+  const root_ = root;
 
   const stubs = execPipe(
     concat(configOptions.generators, apiOptions.generators),
     map((path): [string, Record<string, any>] => (Array.isArray(path) ? path : [path, {}])),
     map(([path, options]) => {
       const _options = { ...options, logger };
-      const resolvedPath = require.resolve(path, { paths: [root] });
+      const resolvedPath = require.resolve(path, { paths: [root_] });
 
       return { options: _options, path, resolvedPath };
     }),

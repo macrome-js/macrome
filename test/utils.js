@@ -10,10 +10,27 @@ function isClean(dir) {
 }
 
 function gitStatus(dir) {
+  // Turn D test/sandbox/projects/...
+  // into D ...
+  const trimPath = dir
+    ? (line) => line.replace(new RegExp(`^( [A-Z] )${dir}/?(.*)`), '$1$2')
+    : null;
   return outputLines('git', ['status', '-s', '--', dir])
-    .map((line) => stripAnsi(line))
     .slice(0, -1)
+    .map((line) => {
+      const noAnsi = stripAnsi(line);
+      return trimPath ? trimPath(noAnsi) : noAnsi;
+    })
     .sort();
+}
+
+// Hard reset a directory. Restore deleted files. Delete new files.
+// There's got to be a better way, right????
+function hardReset(dir) {
+  run('git', ['add', dir]);
+  run('git', ['checkout', 'HEAD', '--', dir]);
+  run('git', ['reset', dir]);
+  run('git', ['clean', '-f', '--', dir]);
 }
 
 const sandboxPath = (path) => resolve(__dirname, 'sandbox', path);
@@ -43,4 +60,5 @@ module.exports = {
   eventually,
   isClean,
   gitStatus,
+  hardReset,
 };

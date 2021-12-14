@@ -1,26 +1,25 @@
-import type { ReadOptions } from '../types';
-import type { FileHandle } from 'fs/promises';
-import type { ReadStream } from 'fs';
+import type { ReadOptions, WriteOptions } from '../types';
 
 import { join } from 'path';
-import { promises as fsPromises, createReadStream as fsCreateReadStream } from 'fs';
+import { promises as fsPromises } from 'fs';
 import Queue from '@iter-tools/queue';
 
 const { opendir } = fsPromises;
 
-export function buildReadOptions(options?: ReadOptions): {
+export function buildOptions(
+  options?: ReadOptions,
+): Exclude<ReadOptions, string> & { encoding: 'utf8' };
+export function buildOptions(
+  options?: WriteOptions,
+): Exclude<WriteOptions, string> & { encoding: 'utf8' };
+export function buildOptions(options?: ReadOptions): {
   encoding: BufferEncoding;
   flags?: string;
 } {
   const options_ = typeof options === 'string' ? { encoding: options } : options || {};
 
-  return { ...options_, encoding: options_.encoding || 'utf8' };
-}
-
-export async function createReadStream(path: string | FileHandle): Promise<ReadStream> {
-  return typeof path === 'string'
-    ? fsCreateReadStream(path, 'utf-8')
-    : fsCreateReadStream('', { encoding: 'utf-8', fd: path });
+  // TODO maybe don't force this.
+  return { ...options_, encoding: 'utf8' };
 }
 
 export async function* recursiveReadFiles(
@@ -31,10 +30,10 @@ export async function* recursiveReadFiles(
   } = {},
 ): AsyncGenerator<string> {
   const { shouldInclude = () => true, shouldExclude = () => false } = options;
-  const dirQueue = new Queue([root]);
+  const dirQueue = new Queue(['']);
 
   for (const dir of dirQueue) {
-    const files = await opendir(dir);
+    const files = await opendir(join(root, dir));
 
     for await (const ent of files) {
       const path = join(dir, ent.name);

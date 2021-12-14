@@ -129,18 +129,16 @@ export class Macrome {
     return this.accessorsByFileType.get(ext) || null;
   }
 
-  async getAnnotations(
-    path: string,
-    { handle }: { handle?: FileHandle | null } = {},
-  ): Promise<Annotations | null> {
+  async getAnnotations(path: string, options?: { fd?: FileHandle }): Promise<Annotations | null> {
     const accessor = this.accessorsByFileType.get(extname(path).slice(1));
     const cacheEntry = fsCache.get(path);
 
     if (!accessor) return null;
     if (cacheEntry) return cacheEntry.annotations;
 
-    const resolved = handle != null ? handle : this.resolve(path);
-    return await accessor.readAnnotations(resolved);
+    null; // TODO: else fill cache
+
+    return await accessor.readAnnotations(this.resolve(path), options);
   }
 
   protected async forMatchingGenerators(

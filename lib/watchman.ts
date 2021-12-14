@@ -6,7 +6,7 @@ import type {
 } from './types';
 
 import { relative, join, extname } from 'path';
-import invariant from 'invariant';
+import { Errawr, invariant } from 'errawr';
 import { Client as BaseWatchmanClient } from 'fb-watchman';
 import * as mm from 'micromatch';
 import { when, map, asyncFlatMap, asyncToArray, execPipe } from 'iter-tools-es';
@@ -72,7 +72,7 @@ class WatchmanSubscription {
       if (subscription && files && files.length) await this.onEvent(files_);
     } catch (e: any) {
       // TODO use new EventEmitter({ captureRejections: true }) once stable
-      logger.error(e.stack);
+      logger.error(Errawr.print(e));
     }
   }
 }
@@ -185,7 +185,7 @@ export class WatchmanClient extends BaseWatchmanClient {
     expression?: AsymmetricMMatchExpressionWithSuffixes | null,
     options?: QueryOptions,
   ): Promise<any> {
-    invariant(this.watchRoot, 'You must call watchman.watchProject() before watchman.query()');
+    invariant(!!this.watchRoot, 'You must call watchman.watchProject() before watchman.query()');
 
     return await this.command('query', this.watchRoot, {
       ...options,
@@ -235,7 +235,7 @@ export async function standaloneQuery(
     // TODO asyncFlatMapParallel once it's back
     asyncFlatMap(async (path) => {
       try {
-        const stats = await stat(path);
+        const stats = await stat(join(root, path));
         return [
           {
             path,

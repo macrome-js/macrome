@@ -1,12 +1,12 @@
 import type { FileHandle } from 'fs/promises';
 import type { Accessor, Annotations, File, ReadOptions, WriteOptions } from '../../types';
 
-import { promises as fsPromises } from 'fs';
+import { promises as fsPromises, createReadStream } from 'fs';
 import { first, firstOr } from 'iter-tools-es';
 // @ts-ignore
 import { parse, exec } from '@iter-tools/regex/dist/async/chunked';
 import { CCommentParser } from './parser';
-import { buildReadOptions, createReadStream } from '../../utils/fs';
+import { buildOptions } from '../../utils/fs';
 
 const { readFile, writeFile } = fsPromises;
 
@@ -27,13 +27,13 @@ export class CAccessor implements Accessor {
   supportedFileTypes = supportedFileTypes;
   commentParser = new CCommentParser();
 
-  async readAnnotations(path: string | FileHandle): Promise<Annotations | null> {
-    const match = await exec(headerExp, await createReadStream(path));
+  async readAnnotations(path: string, options?: { fd: FileHandle }): Promise<Annotations | null> {
+    const match = await exec(headerExp, await createReadStream(path, buildOptions(options)));
     return match && this.commentParser.parse(match[2]).annotations;
   }
 
   async read(path: string | FileHandle, options?: ReadOptions): Promise<File> {
-    const content = await readFile(path, buildReadOptions(options));
+    const content = await readFile(path, buildOptions(options));
 
     const match = await exec(headerExp, content);
 

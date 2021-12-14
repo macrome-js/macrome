@@ -7,10 +7,6 @@ declare type ApiProtected = {
     destroyed: boolean;
     macrome: Macrome;
 };
-export declare class ApiError extends Error {
-    verb: string;
-    constructor(message: string, verb: string);
-}
 /**
  * Api is a facade over the Macrome class which exposes the functionality which should be accessible to generators
  */
@@ -23,8 +19,8 @@ export declare class Api {
     buildAnnotations(_destPath?: string): Map<string, any>;
     resolve(path: string): string;
     accessorFor(path: string): Accessor | null;
-    getAnnotations(path: string, options: {
-        handle: FileHandle;
+    getAnnotations(path: string, options?: {
+        fd?: FileHandle;
     }): Promise<Annotations | null>;
     read(path: string, options: ReadOptions): Promise<string>;
     write(path: string, content: string, options: WriteOptions): Promise<void>;
@@ -38,11 +34,6 @@ export declare class GeneratorApi extends Api {
     static fromApi(api: Api, generatorPath: string): GeneratorApi;
     buildAnnotations(_destPath?: string): Map<string, any>;
 }
-export declare class MapApiError extends ApiError {
-    generatorPath: string;
-    destPath?: string;
-    constructor(message: string, verb: string, generatorPath: string, destPath?: string);
-}
 declare type MapChangeApiProtected = GeneratorApiProtected & {
     change: Change;
 };
@@ -50,7 +41,7 @@ export declare class MapChangeApi extends GeneratorApi {
     protected [_]: MapChangeApiProtected;
     constructor(macrome: Macrome, generatorPath: string, change: Change);
     static fromGeneratorApi(generatorApi: GeneratorApi, change: Change): MapChangeApi;
-    protected decorateError(error: Error, verb: string): MapApiError;
+    protected decorateError(error: Error, verb: string): Error;
     buildAnnotations(destPath: string): Map<string, any>;
 }
 export {};

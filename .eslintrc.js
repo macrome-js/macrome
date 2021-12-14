@@ -21,6 +21,7 @@ module.exports = {
       plugins: ['@typescript-eslint'],
       rules: {
         '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+        '@typescript-eslint/no-misused-new': 'off', // There may not be an alternative
         'node/no-unsupported-features/es-syntax': 'off',
         '@typescript-eslint/no-explicit-any': 'off', // Sometimes I need the any type
         'node/no-missing-import': 'off', // TS checks/resolves imports
@@ -63,6 +64,13 @@ module.exports = {
             trailingUnderscore: 'allowSingleOrDouble',
           },
         ],
+      },
+    },
+    {
+      files: 'bin/**.js',
+      rules: {
+        'no-process-exit': 'off',
+        'no-console': 'off',
       },
     },
     {

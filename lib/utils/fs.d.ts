@@ -1,12 +1,10 @@
-/// <reference types="node" />
-import type { ReadOptions } from '../types';
-import type { FileHandle } from 'fs/promises';
-import type { ReadStream } from 'fs';
-export declare function buildReadOptions(options?: ReadOptions): {
-    encoding: BufferEncoding;
-    flags?: string;
+import type { ReadOptions, WriteOptions } from '../types';
+export declare function buildOptions(options?: ReadOptions): Exclude<ReadOptions, string> & {
+    encoding: 'utf8';
 };
-export declare function createReadStream(path: string | FileHandle): Promise<ReadStream>;
+export declare function buildOptions(options?: WriteOptions): Exclude<WriteOptions, string> & {
+    encoding: 'utf8';
+};
 export declare function recursiveReadFiles(root: string, options?: {
     shouldInclude?: (path: string) => boolean | undefined;
     shouldExclude?: (path: string) => boolean | undefined;
