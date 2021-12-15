@@ -12,7 +12,7 @@ const { open } = fsPromises;
 
 const _ = Symbol.for('private members');
 
-class ApiError extends Errawr {
+export class ApiError extends Errawr {
   get name() {
     return 'ApiError';
   }
@@ -37,6 +37,14 @@ export class Api {
     if (this[_].destroyed) {
       throw new Error(`api.${methodName} cannot be called outside the hook providing the api`);
     }
+  }
+
+  get macrome() {
+    return this[_].macrome;
+  }
+
+  get destroyed() {
+    return this[_].destroyed;
   }
 
   destroy(): void {
@@ -97,30 +105,34 @@ export class Api {
       const { mtimeMs } = await fd.stat();
       const new_ = mtimeMs > now; // is there a better way to implement this?
 
-      // if I make this read from the annotations cache
-      const annotations = await accessor.readAnnotations(this.resolve(path), { fd });
-      if (annotations === null) {
-        throw new Error('macrome will not overwrite non-generated files');
+      let annotations = null;
+      if (!new_) {
+        // if I make this read from the annotations cache
+        annotations = await accessor.readAnnotations(this.resolve(path), { fd });
+        if (annotations === null) {
+          throw new Error('macrome will not overwrite non-generated files');
+        }
       }
 
       await fd.truncate();
 
       await accessor.write(path, file, { ...buildOptions(options), fd });
 
+      await fd.close();
+
       // We could wait for the watcher to do this, but there are two reasons we don't:
       // First there may not be a watcher, and we want things to work basically the same way when
       // the watcher is and is not present. Second we want to ensure that our causally linked
       // changes are always batched so that we can detect non-terminating cycles.
-      macrome.enqueue({
+      await macrome.enqueue({
         path,
         exists: true,
         new: new_,
         mtimeMs,
       });
     } catch (e: any) {
+      await fd?.close();
       throw this.decorateError(e, 'write');
-    } finally {
-      fd?.close();
     }
   }
 }
@@ -132,14 +144,18 @@ type GeneratorApiProtected = ApiProtected & {
 export class GeneratorApi extends Api {
   protected [_]: GeneratorApiProtected;
 
+  static fromApi(api: Api, generatorPath: string): GeneratorApi {
+    const { macrome } = api[_];
+    return new GeneratorApi(macrome, generatorPath);
+  }
+
   constructor(macrome: Macrome, generatorPath: string) {
     super(macrome);
     this[_].generatorPath = generatorPath;
   }
 
-  static fromApi(api: Api, generatorPath: string): GeneratorApi {
-    const { macrome } = api[_];
-    return new GeneratorApi(macrome, generatorPath);
+  get generatorPath() {
+    return this[_].generatorPath;
   }
 
   buildAnnotations(_destPath?: string): Map<string, any> {
@@ -159,14 +175,18 @@ type MapChangeApiProtected = GeneratorApiProtected & {
 export class MapChangeApi extends GeneratorApi {
   protected [_]: MapChangeApiProtected;
 
+  static fromGeneratorApi(generatorApi: GeneratorApi, change: Change): MapChangeApi {
+    const { macrome, generatorPath } = generatorApi[_];
+    return new MapChangeApi(macrome, generatorPath, change);
+  }
+
   constructor(macrome: Macrome, generatorPath: string, change: Change) {
     super(macrome, generatorPath);
     this[_].change = change;
   }
 
-  static fromGeneratorApi(generatorApi: GeneratorApi, change: Change): MapChangeApi {
-    const { macrome, generatorPath } = generatorApi[_];
-    return new MapChangeApi(macrome, generatorPath, change);
+  get change() {
+    return this[_].change;
   }
 
   protected decorateError(error: Error, verb: string): Error {
@@ -181,7 +201,7 @@ export class MapChangeApi extends GeneratorApi {
   buildAnnotations(destPath: string): Map<string, any> {
     const { macrome } = this[_];
 
-    const relPath = relative(dirname(destPath), macrome.root);
+    const relPath = relative(dirname(destPath), this.change.path);
 
     return new Map([
       ...super.buildAnnotations(destPath),

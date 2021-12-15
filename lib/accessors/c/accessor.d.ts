@@ -9,5 +9,5 @@ export declare class CAccessor implements Accessor {
         fd: FileHandle;
     }): Promise<Annotations | null>;
     read(path: string | FileHandle, options?: ReadOptions): Promise<File>;
-    write(path: string | FileHandle, file: File, options: WriteOptions): Promise<void>;
+    write(path: string, file: File, options: WriteOptions): Promise<void>;
 }

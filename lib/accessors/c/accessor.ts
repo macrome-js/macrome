@@ -1,14 +1,16 @@
 import type { FileHandle } from 'fs/promises';
+import { promises as streamPromises } from 'stream';
 import type { Accessor, Annotations, File, ReadOptions, WriteOptions } from '../../types';
 
-import { promises as fsPromises, createReadStream } from 'fs';
+import { promises as fsPromises, createReadStream, createWriteStream } from 'fs';
 import { first, firstOr } from 'iter-tools-es';
 // @ts-ignore
 import { parse, exec } from '@iter-tools/regex/dist/async/chunked';
 import { CCommentParser } from './parser';
 import { buildOptions } from '../../utils/fs';
 
-const { readFile, writeFile } = fsPromises;
+const { readFile } = fsPromises;
+const { pipeline } = streamPromises;
 
 // Below is an example of a leading comment this code would parse:
 /* @macrome
@@ -17,7 +19,7 @@ const { readFile, writeFile } = fsPromises;
  * One or more lines of free text
  */
 
-const prefixExp = /^#![^\r\n]]*\r?\n/s;
+const prefixExp = /^#![^\r\n]*\r?\n/s;
 const firstCommentExp = /\s*\/\*\s*@macrome\b.*?\*\//s;
 const headerExp = parse(`^(${prefixExp.source})?(${firstCommentExp.source})`, 's');
 
@@ -49,7 +51,7 @@ export class CAccessor implements Accessor {
     );
   }
 
-  async write(path: string | FileHandle, file: File, options: WriteOptions): Promise<void> {
+  async write(path: string, file: File, options: WriteOptions): Promise<void> {
     const { header, content } = file;
     if (header && (!header.annotations || first(header.annotations.keys()) !== 'macrome')) {
       throw new Error('macrome annotation must be first');
@@ -58,6 +60,8 @@ export class CAccessor implements Accessor {
     const prefix = firstOr('', prefixExp.exec(content));
     const headerText = header ? this.commentParser.print(header) : '';
 
-    await writeFile(path, `${prefix}${headerText}\n${content.slice(prefix.length)}`, options);
+    const stream = createWriteStream(path, buildOptions(options));
+
+    await pipeline(`${prefix}${headerText}\n${content.slice(prefix.length)}`, stream);
   }
 }

@@ -24,8 +24,9 @@ export declare class Macrome {
     generatorsMeta: WeakMap<Generator<unknown>, GeneratorMeta>;
     queue: Queue<{
         change: Change;
-        cacheEntry: CacheEntry | null;
+        cacheEntry: CacheEntry | undefined;
     }> | null;
+    enqueueLock: Promise<void> | null;
     accessorsByFileType: Map<string, Accessor>;
     constructor(apiOptions: Options);
     protected initialize(): Promise<void>;
@@ -39,6 +40,7 @@ export declare class Macrome {
     protected forMatchingGenerators(path: string, cb: (generator: Generator<unknown>, meta: GeneratorMeta) => unknown): Promise<void>;
     protected getBaseExpression(): AsymmetricMMatchExpressionWithSuffixes;
     enqueue(change: Change): Promise<void>;
+    __enqueue(change: Change): Promise<void>;
     processChanges(): Promise<void>;
     build(): Promise<void>;
     watch(): Promise<void>;

@@ -3,4 +3,4 @@ export type { Options } from './config';
 export type { Api, GeneratorApi, MapChangeApi } from './apis';
 
 export { Macrome } from './macrome';
-export { ApiError, MapApiError } from './apis';
+export { ApiError } from './apis';

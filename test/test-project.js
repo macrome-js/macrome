@@ -22,7 +22,7 @@ function testProject(root) {
     expect(gitStatus(rootRel)).toMatchSnapshot();
   });
 
-  it.only('builds', async () => {
+  it('builds', async () => {
     await macrome.clean();
     await macrome.build();
 
