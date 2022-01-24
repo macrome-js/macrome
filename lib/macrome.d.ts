@@ -6,7 +6,12 @@ import { WatchmanClient } from './watchman';
 import { Api, GeneratorApi } from './apis';
 import { Options, BuiltOptions } from './config';
 import { VCSConfig } from './vcs-configs';
-import { CacheEntry } from './fs-cache';
+export declare type FilesEntry = {
+    path: string;
+    mtimeMs: number;
+    annotations: Annotations | null;
+    generatedPaths: Set<string>;
+};
 declare type GeneratorMeta = {
     api: GeneratorApi;
     mappings: Map<string, unknown>;
@@ -24,10 +29,11 @@ export declare class Macrome {
     generatorsMeta: WeakMap<Generator<unknown>, GeneratorMeta>;
     queue: Queue<{
         change: Change;
-        cacheEntry: CacheEntry | undefined;
+        filesEntry: FilesEntry | undefined;
     }> | null;
     enqueueLock: Promise<void> | null;
     accessorsByFileType: Map<string, Accessor>;
+    files: Map<string, FilesEntry>;
     constructor(apiOptions: Options);
     protected initialize(): Promise<void>;
     protected get generatorInstances(): IterableIterator<Generator<unknown>>;
@@ -45,6 +51,8 @@ export declare class Macrome {
     build(): Promise<void>;
     watch(): Promise<void>;
     stopWatching(): void;
+    __decorateChangeWithAnnotations(change: Change): Promise<Change>;
+    __scanChanges(): Promise<Array<Change>>;
     clean(): Promise<void>;
     check(): Promise<boolean>;
     relative(path: string): string;

@@ -12,13 +12,6 @@ import { buildOptions } from '../../utils/fs';
 const { readFile } = fsPromises;
 const { pipeline } = streamPromises;
 
-// Below is an example of a leading comment this code would parse:
-/* @macrome
- * @generatedfrom ./$concat.js
- * @generatedby generate/generators/$methods/index.js
- * One or more lines of free text
- */
-
 const prefixExp = /^#![^\r\n]*\r?\n/s;
 const firstCommentExp = /\s*\/\*\s*@macrome\b.*?\*\//s;
 const headerExp = parse(`^(${prefixExp.source})?(${firstCommentExp.source})`, 's');

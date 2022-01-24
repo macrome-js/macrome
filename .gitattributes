@@ -1,0 +1,3 @@
+lib/**/*.js linguist-generated=true
+lib/**/*.d.ts linguist-generated=true
+**/types.d.ts linguist-generated=false

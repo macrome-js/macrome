@@ -29,29 +29,35 @@ const compoundExpr = (name: string, ...terms: Array<unknown>) => {
   return [name, terms.length === 0 ? [] : terms.length === 1 ? terms[0] : ['anyof', ...terms]];
 };
 
-type QueryOptions = {
+export type QueryOptions = {
   since?: string;
   fields?: Array<string>;
 };
 
-type SubscriptionOptions = QueryOptions & {
+export type SubscriptionOptions = QueryOptions & {
   drop?: string | Array<string>;
   defer?: string | Array<string>;
   defer_vcs?: boolean;
 };
 
-type SubscriptionEvent = {
+export type SubscriptionEvent = {
   subscription: string;
   files: Array<any>;
 };
 
 type OnEvent = (changes: Array<Change>) => Promise<unknown>;
 
-class WatchmanSubscription {
+export class WatchmanSubscription {
+  expression: AsymmetricMMatchExpressionWithSuffixes | null;
   name: string;
   onEvent: OnEvent;
 
-  constructor(subscription: any, onEvent: OnEvent) {
+  constructor(
+    expression: AsymmetricMMatchExpressionWithSuffixes | null,
+    subscription: any,
+    onEvent: OnEvent,
+  ) {
+    this.expression = expression;
     this.name = subscription.subscribe;
     this.onEvent = onEvent;
 
@@ -209,7 +215,7 @@ export class WatchmanClient extends BaseWatchmanClient {
       ...when(expression, { expression: () => this.__expressionFrom(expression) }),
     });
 
-    const subscription = new WatchmanSubscription(response, onEvent);
+    const subscription = new WatchmanSubscription(expression, response, onEvent);
 
     this.subscriptions.set(subscriptionName, subscription);
 
@@ -217,7 +223,7 @@ export class WatchmanClient extends BaseWatchmanClient {
   }
 }
 
-// Mimic behavior of watchman's initial build so that `macdrome build` does not rely on the watchman service
+// Mimic behavior of watchman's initial build so that `macrome build` does not rely on the watchman service
 export async function standaloneQuery(
   root: string,
   expression?: AsymmetricMMatchExpressionWithSuffixes | null,
@@ -232,7 +238,6 @@ export async function standaloneQuery(
 
   return await execPipe(
     recursiveReadFiles(root, { shouldInclude, shouldExclude }),
-    // TODO asyncFlatMapParallel once it's back
     asyncFlatMap(async (path) => {
       try {
         const stats = await stat(join(root, path));

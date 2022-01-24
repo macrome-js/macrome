@@ -1,6 +1,8 @@
 import { FileHandle } from 'fs/promises';
 import type { MapChangeApi, GeneratorApi } from './apis';
 
+export type Annotations = Map<string, any>;
+
 export type Change =
   | {
       path: string;
@@ -11,12 +13,11 @@ export type Change =
       exists: true;
       new: boolean;
       mtimeMs: number;
+      annotations?: Annotations | null;
     };
 
-export type Annotations = Map<string, any>;
-
 export type FileHeader = {
-  annotations: Annotations;
+  annotations: Annotations | null;
   content?: string;
 };
 

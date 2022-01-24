@@ -29,7 +29,7 @@ function gitStatus(dir) {
 function hardReset(dir) {
   run('git', ['add', dir]);
   run('git', ['checkout', 'HEAD', '--', dir]);
-  run('git', ['reset', dir]);
+  run('git', ['reset', '--', dir]);
   run('git', ['clean', '-f', '--', dir]);
 }
 
