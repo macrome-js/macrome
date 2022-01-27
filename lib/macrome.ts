@@ -8,7 +8,7 @@ import type {
 } from './types';
 
 import { join, dirname, basename, extname, relative, resolve } from 'path';
-import { promises as fsPromises } from 'fs';
+import { unlink } from 'fs/promises';
 import requireFresh from 'import-fresh';
 import findUp from 'find-up';
 import { map, flat, flatMap, wrap, asyncMap, asyncToArray } from 'iter-tools-es';
@@ -32,7 +32,7 @@ export type FilesEntry = {
   generatedPaths: Set<string>;
 };
 
-const { unlink } = fsPromises;
+const verbFor = (change: Change) => (change.exists ? (change.new ? 'add' : 'update') : 'remove');
 
 type GeneratorMeta = {
   api: GeneratorApi;
@@ -51,7 +51,6 @@ export class Macrome {
   generators: Map<string, Array<Generator<unknown>>>;
   generatorsMeta: WeakMap<Generator<unknown>, GeneratorMeta>;
   queue: Queue<{ change: Change; filesEntry: FilesEntry | undefined }> | null = null;
-  enqueueLock: Promise<void> | null = null;
   accessorsByFileType: Map<string, Accessor>;
   files: Map<string, FilesEntry>;
 
@@ -92,9 +91,13 @@ export class Macrome {
     );
   }
 
-  protected async initialize(): Promise<void> {
+  get logger(): any {
+    return logger;
+  }
+
+  protected async __initialize(): Promise<void> {
     for (const generatorPath of this.options.generators.keys()) {
-      await this.instantiateGenerators(generatorPath);
+      await this.__instantiateGenerators(generatorPath);
     }
 
     this.initialized = true;
@@ -104,11 +107,7 @@ export class Macrome {
     return flat(1, this.generators.values());
   }
 
-  get logger(): any {
-    return logger;
-  }
-
-  protected async instantiateGenerators(generatorPath: string): Promise<void> {
+  protected async __instantiateGenerators(generatorPath: string): Promise<void> {
     const Generator: Generator<unknown> = requireFresh(generatorPath);
 
     for (const generator of get(this.generators, generatorPath, [])) {
@@ -133,6 +132,50 @@ export class Macrome {
     }
   }
 
+  protected async __forMatchingGenerators(
+    path: string,
+    cb: (generator: Generator<unknown>, meta: GeneratorMeta) => unknown,
+  ): Promise<void> {
+    const { generatorsMeta } = this;
+
+    for (const generator of this.generatorInstances) {
+      // Cache me!
+      if (matches(path, generator)) {
+        await cb(generator, generatorsMeta.get(generator)!);
+      }
+    }
+  }
+
+  protected __getBaseExpression(): AsymmetricMMatchExpressionWithSuffixes {
+    const { alwaysExclude: exclude } = this.options;
+
+    return {
+      suffixes: [...this.accessorsByFileType.keys()],
+      exclude,
+    };
+  }
+
+  protected async __decorateChangeWithAnnotations(change: Change): Promise<Change> {
+    const path = this.resolve(change.path);
+    const accessor = this.accessorFor(path);
+    if (accessor && change.exists) {
+      const fd = await openKnownFileForReading(path, change.mtimeMs);
+      const annotations = await accessor.readAnnotations(path, { fd });
+      await fd.close();
+      return { ...change, annotations };
+    } else {
+      return change;
+    }
+  }
+
+  protected async __scanChanges(): Promise<Array<Change>> {
+    const changes = await standaloneQuery(this.root, this.__getBaseExpression());
+
+    return await asyncToArray(
+      asyncMap((change) => this.__decorateChangeWithAnnotations(change), changes),
+    );
+  }
+
   accessorFor(path: string): Accessor | null {
     const ext = extname(path).slice(1);
 
@@ -147,29 +190,17 @@ export class Macrome {
     return await accessor.readAnnotations(this.resolve(path), options);
   }
 
-  protected async forMatchingGenerators(
-    path: string,
-    cb: (generator: Generator<unknown>, meta: GeneratorMeta) => unknown,
-  ): Promise<void> {
-    const { generatorsMeta } = this;
+  async clean(): Promise<void> {
+    const changes = await this.__scanChanges();
 
-    for (const generator of this.generatorInstances) {
-      if (matches(path, generator)) {
-        await cb(generator, generatorsMeta.get(generator)!);
+    for (const change of changes) {
+      if (change.exists && change.annotations != null) {
+        await unlink(this.resolve(change.path));
       }
     }
   }
 
-  protected getBaseExpression(): AsymmetricMMatchExpressionWithSuffixes {
-    const { alwaysExclude: exclude } = this.options;
-
-    return {
-      suffixes: [...this.accessorsByFileType.keys()],
-      exclude,
-    };
-  }
-
-  async enqueue(change: Change): Promise<void> {
+  enqueue(change: Change): void {
     const { path } = change;
     const filesEntry = this.files.get(path) || undefined;
 
@@ -178,45 +209,17 @@ export class Macrome {
       return;
     }
 
-    if (this.enqueueLock) {
-      await this.enqueueLock;
-    }
-
-    let deferred: { resolve: () => void; reject: (r: any) => any } = null!;
-    this.enqueueLock = new Promise((resolve, reject) => (deferred = { resolve, reject }));
-
     try {
-      await this.__enqueue(change);
-      this.enqueueLock = null;
-      deferred.resolve();
-    } catch (e) {
-      this.enqueueLock = null;
-      deferred.reject(e);
-    }
+      this.__enqueue(change);
+    } catch (e) {}
   }
 
-  async __enqueue(change: Change): Promise<void> {
+  __enqueue(change: Change): void {
     const { path } = change;
     const filesEntry = this.files.get(path) || undefined;
 
     if (change.exists) {
-      const { progressive } = this;
       const { annotations = null } = change;
-      const generatedFrom = annotations && resolve(path, annotations.get('generatedfrom'));
-
-      if (generatedFrom && !this.files.has(generatedFrom)) {
-        if (!progressive) {
-          // Ignore files generated by other files we just haven't generated yet
-          // NOTE: We're using cache status to determine if a file has been processed so we can't save this cache entry
-          // If we did our file wouldn't be processed later!
-          return;
-        } else {
-          // I don't think this should happen and I don't know what it would mean if it did
-          logger.warn(
-            `Processing \`${path}\` which is generated from \`${generatedFrom}\` which does not exist`,
-          );
-        }
-      }
 
       const { mtimeMs } = change;
       const generatedPaths = filesEntry ? filesEntry.generatedPaths : new Set<string>();
@@ -226,6 +229,7 @@ export class Macrome {
       this.files.delete(path);
     }
 
+    logger.debug(`enqueueing ${verbFor(change)} ${path}`);
     this.queue!.push({ change, filesEntry });
   }
 
@@ -261,7 +265,7 @@ export class Macrome {
         const generatedPaths = new Set<string>();
 
         if (change.exists) {
-          await this.forMatchingGenerators(path, async (generator, { mappings, api: genApi }) => {
+          await this.__forMatchingGenerators(path, async (generator, { mappings, api: genApi }) => {
             // Changes made through this api feed back into the queue
             const api = MapChangeApi.fromGeneratorApi(genApi, change);
 
@@ -274,7 +278,7 @@ export class Macrome {
             generatorsToReduce.add(generator);
           });
         } else {
-          await this.forMatchingGenerators(path, async (generator, { mappings }) => {
+          await this.__forMatchingGenerators(path, async (generator, { mappings }) => {
             // Free any map results the file made
             mappings.delete(path);
             generatorsToReduce.add(generator);
@@ -305,15 +309,15 @@ export class Macrome {
     }
   }
 
-  async build(): Promise<void> {
-    const changes = await this.__scanChanges();
-
-    if (!this.initialized) await this.initialize();
+  async __build(changes: Array<Change>): Promise<void> {
+    if (!this.initialized) await this.__initialize();
 
     this.queue = new Queue();
 
     for (const change of changes) {
-      await this.enqueue(change);
+      if (change.exists && !change.annotations) {
+        await this.enqueue(change);
+      }
     }
 
     await this.processChanges();
@@ -322,7 +326,7 @@ export class Macrome {
       // remove @generated files which were not generated
       if (change.exists && change.annotations) {
         if (!this.files.has(change.path)) {
-          await unlink(change.path);
+          await unlink(this.resolve(change.path));
         }
       }
     }
@@ -330,6 +334,10 @@ export class Macrome {
     await this.processChanges();
 
     this.queue = null;
+  }
+
+  async build(): Promise<void> {
+    await this.__build(await this.__scanChanges());
   }
 
   async watch(): Promise<void> {
@@ -364,20 +372,11 @@ export class Macrome {
 
     const fields = ['name', 'mtime_ms', 'exists', 'type', 'new'];
 
-    const expression = this.getBaseExpression();
+    const expression = this.__getBaseExpression();
 
-    const { files: changes, clock: start } = await client.query(this.root, expression, { fields });
+    const { files: changes, clock: start } = await client.query('/', expression, { fields });
 
-    if (!this.initialized) await this.initialize();
-
-    this.queue = new Queue();
-
-    for (const change of changes) {
-      await this.enqueue(change);
-    }
-
-    await this.processChanges();
-    this.queue = null;
+    this.__build(changes);
 
     this.progressive = true;
     logger.notice('Initial generation completed; watching for changes...');
@@ -422,7 +421,7 @@ export class Macrome {
           this.queue = new Queue();
         }
         for (const change of changes) {
-          await this.enqueue(await this.__decorateChangeWithAnnotations(change));
+          this.enqueue(await this.__decorateChangeWithAnnotations(change));
         }
         if (noQueue) {
           await this.processChanges();
@@ -436,36 +435,6 @@ export class Macrome {
     if (this.watchClient) {
       this.watchClient.end();
       this.watchClient = null;
-    }
-  }
-
-  async __decorateChangeWithAnnotations(change: Change): Promise<Change> {
-    const { path } = change;
-    const accessor = this.accessorFor(path);
-    if (accessor && change.exists) {
-      const fd = await openKnownFileForReading(path, change.mtimeMs);
-      const annotations = await accessor.readAnnotations(path, { fd });
-      return { ...change, annotations };
-    } else {
-      return change;
-    }
-  }
-
-  async __scanChanges(): Promise<Array<Change>> {
-    const changes = await standaloneQuery(this.root, this.getBaseExpression());
-
-    return await asyncToArray(
-      asyncMap((change) => this.__decorateChangeWithAnnotations(change), changes),
-    );
-  }
-
-  async clean(): Promise<void> {
-    const changes = await this.__scanChanges();
-
-    for (const change of changes) {
-      if (change.exists && change.annotations != null) {
-        await unlink(this.resolve(change.path));
-      }
     }
   }
 

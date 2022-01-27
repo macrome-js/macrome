@@ -11,13 +11,11 @@ import { Client as BaseWatchmanClient } from 'fb-watchman';
 import * as mm from 'micromatch';
 import { when, map, asyncFlatMap, asyncToArray, execPipe } from 'iter-tools-es';
 
-import { promises as fsPromises } from 'fs';
+import { stat } from 'fs/promises';
 import { recursiveReadFiles } from './utils/fs';
 
 import { logger as baseLogger } from './utils/logger';
 import { asArray, mergeMatchers } from './matchable';
-
-const { stat } = fsPromises;
 
 const logger = baseLogger.get('watchman');
 
@@ -26,7 +24,7 @@ const makeMatcher = (expr: MMatchExpression) => {
 };
 
 const compoundExpr = (name: string, ...terms: Array<unknown>) => {
-  return [name, terms.length === 0 ? [] : terms.length === 1 ? terms[0] : ['anyof', ...terms]];
+  return terms.length === 0 ? null : [name, terms.length === 1 ? terms[0] : ['anyof', ...terms]];
 };
 
 export type QueryOptions = {
@@ -46,6 +44,18 @@ export type SubscriptionEvent = {
 };
 
 type OnEvent = (changes: Array<Change>) => Promise<unknown>;
+
+const watchmanChangeToMacromeChange = ({
+  name: path,
+  exists,
+  new: new_,
+  mtime_ms: mtimeMs,
+}: any): Change => ({
+  path,
+  exists,
+  new: new_,
+  mtimeMs,
+});
 
 export class WatchmanSubscription {
   expression: AsymmetricMMatchExpressionWithSuffixes | null;
@@ -68,14 +78,11 @@ export class WatchmanSubscription {
     try {
       const { files, subscription } = message;
 
-      const files_ = files.map(({ name: path, exists, new: new_, mtime_ms: mtimeMs }) => ({
-        path,
-        exists,
-        new: new_,
-        mtimeMs,
-      }));
+      if (files) {
+        const files_ = files.map(watchmanChangeToMacromeChange);
 
-      if (subscription && files && files.length) await this.onEvent(files_);
+        if (subscription && files && files.length) await this.onEvent(files_);
+      }
     } catch (e: any) {
       // TODO use new EventEmitter({ captureRejections: true }) once stable
       logger.error(Errawr.print(e));
@@ -96,7 +103,7 @@ export class WatchmanClient extends BaseWatchmanClient {
     this.subscriptions = new Map();
 
     this.on('subscription', (event) => {
-      logger.debug(event);
+      logger.debug('<-', event);
       const subscription = this.subscriptions.get(event.subscription);
       if (subscription) subscription.__onEvent(event);
     });
@@ -127,16 +134,22 @@ export class WatchmanClient extends BaseWatchmanClient {
       const re = mm.makeRe(glob + '/**');
       return ['pcre', re.source, 'wholename'];
     };
+    const excludeExpr = compoundExpr('not', ...map(dirExpr, asArray(exclude)));
+    const includeExpr = [...map(fileExpr, asArray(include))];
+    const suffixExpr = suffixSet
+      ? ['suffix', suffixes]
+      : suffixes.length
+      ? ['anyof', ...suffixes.map((suffix) => ['suffix', suffix])]
+      : null;
 
-    return compoundExpr(
+    return [
       'allof',
-      compoundExpr('not', ...map(dirExpr, asArray(exclude))),
-      ...map(fileExpr, asArray(include)),
+      ['type', 'f'],
+      ...when(excludeExpr, [excludeExpr]),
+      ...when(includeExpr, includeExpr),
       // See https://facebook.github.io/watchman/docs/expr/suffix.html#suffix-set
-      suffixSet
-        ? compoundExpr('suffix', ...suffixes)
-        : compoundExpr('anyof', ...suffixes.map((suffix) => ['suffix', suffix])),
-    );
+      ...when(suffixExpr, [suffixExpr]),
+    ];
   }
 
   async command(command: string, ...args: Array<any>): Promise<any> {
@@ -158,6 +171,7 @@ export class WatchmanClient extends BaseWatchmanClient {
             );
           } else {
             logger.debug('<-', resp);
+
             resolve(resp);
           }
         });
@@ -191,13 +205,18 @@ export class WatchmanClient extends BaseWatchmanClient {
     expression?: AsymmetricMMatchExpressionWithSuffixes | null,
     options?: QueryOptions,
   ): Promise<any> {
-    invariant(!!this.watchRoot, 'You must call watchman.watchProject() before watchman.query()');
+    invariant(this.watchRoot, 'You must call watchman.watchProject() before watchman.query()');
 
-    return await this.command('query', this.watchRoot, {
+    const resp = await this.command('query', this.watchRoot, {
       ...options,
       relative_root: relative(this.watchRoot, join(this.root, path)),
       ...when(expression, { expression: this.__expressionFrom(expression) }),
     });
+
+    return {
+      ...resp,
+      files: resp.files.map(watchmanChangeToMacromeChange),
+    };
   }
 
   async subscribe(
@@ -212,7 +231,7 @@ export class WatchmanClient extends BaseWatchmanClient {
     const response = await this.command('subscribe', this.watchRoot, subscriptionName, {
       ...options,
       relative_root: relative(this.watchRoot, join(this.root, path)),
-      ...when(expression, { expression: () => this.__expressionFrom(expression) }),
+      ...when(expression, () => ({ expression: this.__expressionFrom(expression) })),
     });
 
     const subscription = new WatchmanSubscription(expression, response, onEvent);
@@ -244,7 +263,7 @@ export async function standaloneQuery(
         return [
           {
             path,
-            mtimeMs: stats.mtimeMs,
+            mtimeMs: Math.floor(stats.mtimeMs),
             new: false,
             exists: true,
           },

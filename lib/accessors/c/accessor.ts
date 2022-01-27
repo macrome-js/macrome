@@ -1,16 +1,14 @@
 import type { FileHandle } from 'fs/promises';
-import { promises as streamPromises } from 'stream';
+import { pipeline } from 'stream/promises';
 import type { Accessor, Annotations, File, ReadOptions, WriteOptions } from '../../types';
 
-import { promises as fsPromises, createReadStream, createWriteStream } from 'fs';
+import { createReadStream, createWriteStream } from 'fs';
+import { readFile } from 'fs/promises';
 import { first, firstOr } from 'iter-tools-es';
 // @ts-ignore
 import { parse, exec } from '@iter-tools/regex/dist/async/chunked';
 import { CCommentParser } from './parser';
 import { buildOptions } from '../../utils/fs';
-
-const { readFile } = fsPromises;
-const { pipeline } = streamPromises;
 
 const prefixExp = /^#![^\r\n]*\r?\n/s;
 const firstCommentExp = /\s*\/\*\s*@macrome\b.*?\*\//s;

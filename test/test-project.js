@@ -1,23 +1,23 @@
 const { relative } = require('path');
 const { writeFile, unlink } = require('fs').promises;
 const { Macrome } = require('../lib');
-const { isClean, gitStatus, hardReset } = require('./utils');
+const { isClean, gitStatus, hardReset, run } = require('./utils');
 
 function testProject(root) {
   const macrome = new Macrome({ root, quiet: true });
 
   const rootRel = root.startsWith('/') ? relative(process.cwd(), root) : root;
 
-  beforeAll(async () => {
+  beforeAll(() => {
     hardReset(rootRel);
   });
 
-  afterAll(async () => {
+  afterAll(() => {
     hardReset(rootRel);
   });
 
   it('cleans', async () => {
-    await macrome.clean();
+    run('node', ['../../../../bin/cli.js', 'clean'], root);
 
     expect(gitStatus(rootRel)).toMatchSnapshot();
   });

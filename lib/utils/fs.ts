@@ -1,11 +1,8 @@
 import type { ReadOptions, WriteOptions } from '../types';
 
 import { join } from 'path';
-import { promises as fsPromises, stat } from 'fs';
 import Queue from '@iter-tools/queue';
-import { FileHandle } from 'fs/promises';
-
-const { opendir, open } = fsPromises;
+import { FileHandle, opendir, open } from 'fs/promises';
 
 export function buildOptions(
   options?: ReadOptions,
@@ -57,12 +54,18 @@ export async function* recursiveReadFiles(
 }
 
 // Make sure we're reading the right version of the right file
-export async function openKnownFileForReading(path: string, mtimeMs: number): Promise<FileHandle> {
+export async function openKnownFileForReading(
+  path: string,
+  expectedMtimeMs: number,
+): Promise<FileHandle> {
   const handle = await open(path, 'r');
   const stats = await handle.stat();
+  const mtimeMs = Math.floor(stats.mtimeMs);
 
-  if (stats.mtimeMs !== mtimeMs) {
-    throw new Error(`Unable to read additional info about file \`${path}\`.`);
+  if (mtimeMs !== expectedMtimeMs) {
+    throw new Error(
+      `Unable to read additional info about file \`${path}\`.\nExpected mtimeMs: ${expectedMtimeMs}\nmtimeMs: ${stats.mtimeMs}`,
+    );
   }
 
   return handle;

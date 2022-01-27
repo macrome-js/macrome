@@ -1,5 +1,6 @@
-const { resolve } = require('path');
+const { join } = require('path');
 const stripAnsi = require('strip-ansi');
+const { when } = require('iter-tools-es');
 
 const { run, hasOutput, outputLines } = require('../lib/utils/shell');
 
@@ -15,7 +16,7 @@ function gitStatus(dir) {
   const trimPath = dir
     ? (line) => line.replace(new RegExp(`^( [A-Z] )${dir}/?(.*)`), '$1$2')
     : null;
-  return outputLines('git', ['status', '-s', '--', dir])
+  return outputLines('git', ['status', '-s', ...when(dir, ['--', dir])])
     .slice(0, -1)
     .map((line) => {
       const noAnsi = stripAnsi(line);
@@ -33,7 +34,7 @@ function hardReset(dir) {
   run('git', ['clean', '-f', '--', dir]);
 }
 
-const sandboxPath = (path) => resolve(__dirname, 'sandbox', path);
+const sandboxPath = (path) => join('test', 'sandbox', path);
 
 async function eventually(cb, ms = 500, max = 8) {
   for (let i = 0; i < max; i++) {

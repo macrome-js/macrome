@@ -11,4 +11,4 @@ export declare function recursiveReadFiles(root: string, options?: {
     shouldInclude?: (path: string) => boolean | undefined;
     shouldExclude?: (path: string) => boolean | undefined;
 }): AsyncGenerator<string>;
-export declare function openKnownFileForReading(path: string, mtimeMs: number): Promise<FileHandle>;
+export declare function openKnownFileForReading(path: string, expectedMtimeMs: number): Promise<FileHandle>;

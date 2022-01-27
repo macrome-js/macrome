@@ -4,11 +4,8 @@ import type { Macrome } from './macrome';
 import type { WriteOptions, ReadOptions, Accessor, File, Change, Annotations } from './types';
 
 import { relative, dirname } from 'path';
-import { promises as fsPromises } from 'fs';
-import { FileHandle } from 'fs/promises';
+import { FileHandle, open } from 'fs/promises';
 import { buildOptions } from './utils/fs';
-
-const { open } = fsPromises;
 
 const _ = Symbol.for('private members');
 
@@ -124,7 +121,7 @@ export class Api {
       // First there may not be a watcher, and we want things to work basically the same way when
       // the watcher is and is not present. Second we want to ensure that our causally linked
       // changes are always batched so that we can detect non-terminating cycles.
-      await macrome.enqueue({
+      macrome.enqueue({
         path,
         exists: true,
         new: new_,
@@ -199,8 +196,6 @@ export class MapChangeApi extends GeneratorApi {
   }
 
   buildAnnotations(destPath: string): Map<string, any> {
-    const { macrome } = this[_];
-
     const relPath = relative(dirname(destPath), this.change.path);
 
     return new Map([
