@@ -1,7 +1,14 @@
 import { Errawr, rawr } from 'errawr';
 
 import type { Macrome } from './macrome';
-import type { WriteOptions, ReadOptions, Accessor, File, Change, Annotations } from './types';
+import type {
+  WriteOptions,
+  ReadOptions,
+  Accessor,
+  File,
+  MappableChange,
+  Annotations,
+} from './types';
 
 import { relative, dirname } from 'path';
 import { FileHandle, open } from 'fs/promises';
@@ -99,12 +106,11 @@ export class Api {
     let fd;
     try {
       fd = await open(this.resolve(path), 'a+');
-      const { mtimeMs } = await fd.stat();
+      const mtimeMs = Math.floor((await fd.stat()).mtimeMs);
       const new_ = mtimeMs > now; // is there a better way to implement this?
 
       let annotations = null;
       if (!new_) {
-        // if I make this read from the annotations cache
         annotations = await accessor.readAnnotations(this.resolve(path), { fd });
         if (annotations === null) {
           throw new Error('macrome will not overwrite non-generated files');
@@ -122,10 +128,10 @@ export class Api {
       // the watcher is and is not present. Second we want to ensure that our causally linked
       // changes are always batched so that we can detect non-terminating cycles.
       macrome.enqueue({
+        op: new_ ? 'A' : 'M',
         path,
-        exists: true,
-        new: new_,
         mtimeMs,
+        state: null!,
       });
     } catch (e: any) {
       await fd?.close();
@@ -166,18 +172,18 @@ export class GeneratorApi extends Api {
 }
 
 type MapChangeApiProtected = GeneratorApiProtected & {
-  change: Change;
+  change: MappableChange;
 };
 
 export class MapChangeApi extends GeneratorApi {
   protected [_]: MapChangeApiProtected;
 
-  static fromGeneratorApi(generatorApi: GeneratorApi, change: Change): MapChangeApi {
+  static fromGeneratorApi(generatorApi: GeneratorApi, change: MappableChange): MapChangeApi {
     const { macrome, generatorPath } = generatorApi[_];
     return new MapChangeApi(macrome, generatorPath, change);
   }
 
-  constructor(macrome: Macrome, generatorPath: string, change: Change) {
+  constructor(macrome: Macrome, generatorPath: string, change: MappableChange) {
     super(macrome, generatorPath);
     this[_].change = change;
   }
@@ -202,5 +208,13 @@ export class MapChangeApi extends GeneratorApi {
       ...super.buildAnnotations(destPath),
       ['generatedfrom', relPath.startsWith('.') ? relPath : `./${relPath}`],
     ]);
+  }
+
+  async write(path: string, content: string, options: WriteOptions): Promise<void> {
+    const { macrome, change } = this[_];
+
+    await super.write(path, content, options);
+
+    macrome.state.get(change.path)!.generatedPaths.add(path);
   }
 }

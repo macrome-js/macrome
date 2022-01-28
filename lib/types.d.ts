@@ -3,18 +3,38 @@ import type { MapChangeApi, GeneratorApi } from './apis';
 
 export type Annotations = Map<string, any>;
 
-export type Change =
-  | {
-      path: string;
-      exists: false;
-    }
-  | {
-      path: string;
-      exists: true;
-      new: boolean;
-      mtimeMs: number;
-      annotations?: Annotations | null;
-    };
+export type FileState = {
+  path: string;
+  mtimeMs: number;
+  annotations: Annotations | null;
+  generatedPaths: Set<string>;
+};
+
+export type DeleteChange = {
+  op: 'D';
+  path: string;
+  state: FileState;
+};
+
+export type ModifyChange = {
+  op: 'M';
+  path: string;
+  state: FileState;
+  mtimeMs: number;
+  annotations?: Annotations | null;
+};
+
+export type AddChange = {
+  op: 'A';
+  path: string;
+  state: null;
+  mtimeMs: number;
+  annotations?: Annotations | null;
+};
+
+export type Change = AddChange | ModifyChange | DeleteChange;
+
+export type MappableChange = AddChange | ModifyChange;
 
 export type FileHeader = {
   annotations: Annotations | null;

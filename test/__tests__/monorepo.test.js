@@ -31,7 +31,7 @@ describe('monorepo', () => {
       await Promise.all([unlink(aPath), unlink(bPath)]);
 
       await eventually(() =>
-        expect(gitStatus(root)).toMatchInlineSnapshot(`
+        expect(gitStatus(root)).toMatchStateInlineSnapshot(`
           Array [
             " D project-a/lib/generated-project-a.js",
             " D project-a/lib/project-a.js",
@@ -44,7 +44,7 @@ describe('monorepo', () => {
       await Promise.all([writeFile(aPath, aContent + '\n'), writeFile(bPath, bContent + '\n')]);
 
       await eventually(() => {
-        expect(gitStatus(root)).toMatchInlineSnapshot(`
+        expect(gitStatus(root)).toMatchStateInlineSnapshot(`
           Array [
             " M project-a/lib/generated-project-a.js",
             " M project-a/lib/project-a.js",

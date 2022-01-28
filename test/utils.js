@@ -1,8 +1,20 @@
 const { join } = require('path');
 const stripAnsi = require('strip-ansi');
 const { when } = require('iter-tools-es');
+const { toMatchInlineSnapshot } = require('jest-snapshot');
 
 const { run, hasOutput, outputLines } = require('../lib/utils/shell');
+
+expect.extend({
+  // We need our inline snapshots that throw because they assert git state.
+  // If the state is incorrect there is no point in continuing the test.
+  // See https://github.com/facebook/jest/issues/10888
+  toMatchStateInlineSnapshot(...args) {
+    // Heck if I know why this line is the special sauce but it is!
+    this.dontThrow = () => {};
+    return toMatchInlineSnapshot.call(this, ...args);
+  },
+});
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

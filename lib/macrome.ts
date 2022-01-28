@@ -1,5 +1,6 @@
 import type { FileHandle } from 'fs/promises';
 import type {
+  FileState,
   Accessor,
   Generator,
   Change,
@@ -7,11 +8,11 @@ import type {
   AsymmetricMMatchExpressionWithSuffixes,
 } from './types';
 
-import { join, dirname, basename, extname, relative, resolve } from 'path';
+import { join, dirname, basename, extname, relative } from 'path';
 import { unlink } from 'fs/promises';
 import requireFresh from 'import-fresh';
 import findUp from 'find-up';
-import { map, flat, flatMap, wrap, asyncMap, asyncToArray } from 'iter-tools-es';
+import { map, flat, flatMap, wrap, asyncMap, asyncToArray, execPipe } from 'iter-tools-es';
 import Queue from '@iter-tools/queue';
 
 import { WatchmanClient, standaloneQuery } from './watchman';
@@ -25,14 +26,9 @@ import { vcsConfigs, VCSConfig } from './vcs-configs';
 import { get } from './utils/map';
 import { openKnownFileForReading } from './utils/fs';
 
-export type FilesEntry = {
-  path: string;
-  mtimeMs: number;
-  annotations: Annotations | null;
-  generatedPaths: Set<string>;
-};
-
-const verbFor = (change: Change) => (change.exists ? (change.new ? 'add' : 'update') : 'remove');
+// eslint-disable-next-line @typescript-eslint/naming-convention
+const verbsByOp = { A: 'add', D: 'remove', M: 'update' };
+const verbFor = (change: Change) => verbsByOp[change.op];
 
 type GeneratorMeta = {
   api: GeneratorApi;
@@ -50,9 +46,9 @@ export class Macrome {
   watchClient: WatchmanClient | null = null;
   generators: Map<string, Array<Generator<unknown>>>;
   generatorsMeta: WeakMap<Generator<unknown>, GeneratorMeta>;
-  queue: Queue<{ change: Change; filesEntry: FilesEntry | undefined }> | null = null;
+  queue: Queue<Change> | null = null;
   accessorsByFileType: Map<string, Accessor>;
-  files: Map<string, FilesEntry>;
+  state: Map<string, FileState>;
 
   constructor(apiOptions: Options) {
     const options = buildOptions(apiOptions);
@@ -76,7 +72,7 @@ export class Macrome {
     this.api = new Api(this);
     this.generators = new Map();
     this.generatorsMeta = new WeakMap();
-    this.files = new Map();
+    this.state = new Map();
 
     if (vcsDir) {
       const vcsDirName = basename(vcsDir);
@@ -158,7 +154,7 @@ export class Macrome {
   protected async __decorateChangeWithAnnotations(change: Change): Promise<Change> {
     const path = this.resolve(change.path);
     const accessor = this.accessorFor(path);
-    if (accessor && change.exists) {
+    if (accessor && change.op !== 'D') {
       const fd = await openKnownFileForReading(path, change.mtimeMs);
       const annotations = await accessor.readAnnotations(path, { fd });
       await fd.close();
@@ -194,43 +190,44 @@ export class Macrome {
     const changes = await this.__scanChanges();
 
     for (const change of changes) {
-      if (change.exists && change.annotations != null) {
+      if (change.op !== 'D' && change.annotations != null) {
         await unlink(this.resolve(change.path));
       }
     }
   }
 
   enqueue(change: Change): void {
-    const { path } = change;
-    const filesEntry = this.files.get(path) || undefined;
+    const { op, path } = change;
+    const state = this.state.get(path);
 
-    if (change.exists ? filesEntry?.mtimeMs === change.mtimeMs : !filesEntry) {
+    if (op !== 'D' ? state?.mtimeMs === change.mtimeMs : !state) {
       // This is an "echo" change: the watcher is re-reporting it but it was already enqueued.
       return;
     }
 
-    try {
-      this.__enqueue(change);
-    } catch (e) {}
+    this.__enqueue(change);
   }
 
   __enqueue(change: Change): void {
-    const { path } = change;
-    const filesEntry = this.files.get(path) || undefined;
+    const { op, path, state } = change;
 
-    if (change.exists) {
-      const { annotations = null } = change;
+    if (op !== 'D') {
+      const { mtimeMs, annotations = null } = change;
+      const generatedPaths = state ? state.generatedPaths : new Set<string>();
 
-      const { mtimeMs } = change;
-      const generatedPaths = filesEntry ? filesEntry.generatedPaths : new Set<string>();
-
-      this.files.set(path, { path, mtimeMs, annotations, generatedPaths });
+      this.state.set(path, { path, mtimeMs, annotations, generatedPaths });
     } else {
-      this.files.delete(path);
+      this.state.delete(path);
     }
 
-    logger.debug(`enqueueing ${verbFor(change)} ${path}`);
-    this.queue!.push({ change, filesEntry });
+    change.state = this.state.get(change.path) || null;
+
+    logger.debug(
+      `enqueueing ${verbFor(change)} ${path}` +
+        (op !== 'D' ? ` modified at ${change.mtimeMs}` : ''),
+    );
+
+    this.queue!.push(change);
   }
 
   // Where the magic happens.
@@ -258,13 +255,19 @@ export class Macrome {
       const generatorsToReduce = new Set();
 
       while (queue.size) {
-        const { change, filesEntry } = queue.shift()!;
+        const change = queue.shift()!;
 
-        const { path } = change;
-        const prevGeneratedPaths = filesEntry && filesEntry.generatedPaths;
+        const { op, path, state } = change;
+        const prevGeneratedPaths = state && state.generatedPaths;
         const generatedPaths = new Set<string>();
+        if (state) state.generatedPaths = generatedPaths;
 
-        if (change.exists) {
+        logger.debug(
+          `executing ${verbFor(change)} ${path}` +
+            (op !== 'D' ? ` modified at ${change.mtimeMs}` : ''),
+        );
+
+        if (op !== 'D') {
           await this.__forMatchingGenerators(path, async (generator, { mappings, api: genApi }) => {
             // Changes made through this api feed back into the queue
             const api = MapChangeApi.fromGeneratorApi(genApi, change);
@@ -290,7 +293,7 @@ export class Macrome {
           if (!generatedPaths.has(path) && (await this.getAnnotations(path)) !== null) {
             await unlink(this.resolve(path));
 
-            await this.enqueue({ path, exists: false });
+            await this.enqueue({ op: 'D', path, state: null! });
           }
         }
 
@@ -315,7 +318,7 @@ export class Macrome {
     this.queue = new Queue();
 
     for (const change of changes) {
-      if (change.exists && !change.annotations) {
+      if (change.op !== 'D' && !change.annotations) {
         await this.enqueue(change);
       }
     }
@@ -323,9 +326,9 @@ export class Macrome {
     await this.processChanges();
 
     for (const change of changes) {
-      // remove @generated files which were not generated
-      if (change.exists && change.annotations) {
-        if (!this.files.has(change.path)) {
+      // remove @generated state which were not generated
+      if (change.op !== 'D' && change.annotations) {
+        if (!this.state.has(change.path)) {
           await unlink(this.resolve(change.path));
         }
       }
@@ -376,7 +379,13 @@ export class Macrome {
 
     const { files: changes, clock: start } = await client.query('/', expression, { fields });
 
-    this.__build(changes);
+    await this.__build(
+      await execPipe(
+        changes,
+        asyncMap(async (change: Change) => await this.__decorateChangeWithAnnotations(change)),
+        asyncToArray,
+      ),
+    );
 
     this.progressive = true;
     logger.notice('Initial generation completed; watching for changes...');
@@ -390,11 +399,11 @@ export class Macrome {
           fields: ['name', 'exists'],
           defer_vcs: false,
         },
-        async (files) => {
-          const [lock] = files;
+        async (state) => {
+          const [lock] = state;
 
           return await client.command(
-            lock.exists ? 'state-enter' : 'state-leave',
+            lock.op !== 'D' ? 'state-enter' : 'state-leave',
             watchRoot,
             'vcs_lock_held',
           );

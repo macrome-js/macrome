@@ -1,17 +1,11 @@
 /// <reference types="node" />
 import type { FileHandle } from 'fs/promises';
-import type { Accessor, Generator, Change, Annotations, AsymmetricMMatchExpressionWithSuffixes } from './types';
+import type { FileState, Accessor, Generator, Change, Annotations, AsymmetricMMatchExpressionWithSuffixes } from './types';
 import Queue from '@iter-tools/queue';
 import { WatchmanClient } from './watchman';
 import { Api, GeneratorApi } from './apis';
 import { Options, BuiltOptions } from './config';
 import { VCSConfig } from './vcs-configs';
-export declare type FilesEntry = {
-    path: string;
-    mtimeMs: number;
-    annotations: Annotations | null;
-    generatedPaths: Set<string>;
-};
 declare type GeneratorMeta = {
     api: GeneratorApi;
     mappings: Map<string, unknown>;
@@ -27,12 +21,9 @@ export declare class Macrome {
     watchClient: WatchmanClient | null;
     generators: Map<string, Array<Generator<unknown>>>;
     generatorsMeta: WeakMap<Generator<unknown>, GeneratorMeta>;
-    queue: Queue<{
-        change: Change;
-        filesEntry: FilesEntry | undefined;
-    }> | null;
+    queue: Queue<Change> | null;
     accessorsByFileType: Map<string, Accessor>;
-    files: Map<string, FilesEntry>;
+    state: Map<string, FileState>;
     constructor(apiOptions: Options);
     get logger(): any;
     protected __initialize(): Promise<void>;

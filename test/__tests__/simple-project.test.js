@@ -9,7 +9,7 @@ describe('simple project', () => {
   const rootDir = sandboxPath('projects/simple-project');
   const macrome = testProject(rootDir);
 
-  describe.only('watch', () => {
+  describe('watch', () => {
     beforeAll(async () => {
       await macrome.watch();
     });
@@ -23,9 +23,10 @@ describe('simple project', () => {
       const originalContent = await readFile(filePath, 'utf8');
 
       await unlink(filePath);
+      macrome.logger.get('test').debug(`unlinking lib/simple-project.js`);
 
       await eventually(() => {
-        expect(gitStatus(rootDir)).toMatchInlineSnapshot(`
+        expect(gitStatus(rootDir)).toMatchStateInlineSnapshot(`
           Array [
             " D lib/generated-simple-project.js",
             " D lib/simple-project.js",
@@ -33,10 +34,11 @@ describe('simple project', () => {
         `);
       });
 
+      macrome.logger.get('test').debug(`writing modified lib/simple-project.js`);
       await writeFile(filePath, originalContent + '\n');
 
       await eventually(() => {
-        expect(gitStatus(rootDir)).toMatchInlineSnapshot(`
+        expect(gitStatus(rootDir)).toMatchStateInlineSnapshot(`
           Array [
             " M lib/generated-simple-project.js",
             " M lib/simple-project.js",
@@ -44,10 +46,11 @@ describe('simple project', () => {
         `);
       });
 
+      macrome.logger.get('test').debug(`writing original lib/simple-project.js`);
       await writeFile(filePath, originalContent);
 
       await eventually(() => {
-        expect(gitStatus(rootDir)).toMatchInlineSnapshot(`Array []`);
+        expect(gitStatus(rootDir)).toMatchStateInlineSnapshot(`Array []`);
       });
     });
   });

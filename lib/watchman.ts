@@ -51,10 +51,10 @@ const watchmanChangeToMacromeChange = ({
   new: new_,
   mtime_ms: mtimeMs,
 }: any): Change => ({
+  op: !exists ? 'D' : new_ ? 'A' : 'M',
   path,
-  exists,
-  new: new_,
   mtimeMs,
+  state: null!,
 });
 
 export class WatchmanSubscription {
@@ -262,10 +262,10 @@ export async function standaloneQuery(
         const stats = await stat(join(root, path));
         return [
           {
+            op: 'A' as const,
             path,
             mtimeMs: Math.floor(stats.mtimeMs),
-            new: false,
-            exists: true,
+            state: null!,
           },
         ];
       } catch (e) {

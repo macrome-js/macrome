@@ -1,6 +1,6 @@
 module.exports = {
   setupFiles: ['<rootDir>/test/test-setup'],
-  bail: true,
+  bail: 1,
   transform: {},
   restoreMocks: true,
   // Tests must be run in series to avoid failures cause by contention for .git/index.lock
