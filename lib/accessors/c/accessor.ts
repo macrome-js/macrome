@@ -1,22 +1,16 @@
-import { Accessor, Annotations, File, ReadOptions, WriteOptions } from '../../types';
+import type { FileHandle } from 'fs/promises';
+import { pipeline } from 'stream/promises';
+import type { Accessor, Annotations, File, ReadOptions, WriteOptions } from '../../types';
 
-import { promises as fsPromises, createReadStream } from 'fs';
+import { createReadStream, createWriteStream } from 'fs';
+import { readFile } from 'fs/promises';
 import { first, firstOr } from 'iter-tools-es';
 // @ts-ignore
 import { parse, exec } from '@iter-tools/regex/dist/async/chunked';
 import { CCommentParser } from './parser';
-import { buildReadOptions } from '../../utils/fs';
+import { buildOptions } from '../../utils/fs';
 
-const { readFile, writeFile } = fsPromises;
-
-// Below is an example of a leading comment this code would parse:
-/* @macrome
- * @generatedfrom ./$concat.js
- * @generatedby generate/generators/$methods/index.js
- * One or more lines of free text
- */
-
-const prefixExp = /^#![^\r\n]]*\r?\n/s;
+const prefixExp = /^#![^\r\n]*\r?\n/s;
 const firstCommentExp = /\s*\/\*\s*@macrome\b.*?\*\//s;
 const headerExp = parse(`^(${prefixExp.source})?(${firstCommentExp.source})`, 's');
 
@@ -26,13 +20,13 @@ export class CAccessor implements Accessor {
   supportedFileTypes = supportedFileTypes;
   commentParser = new CCommentParser();
 
-  async readAnnotations(path: string): Promise<Annotations> {
-    const match = await exec(headerExp, createReadStream(path, 'utf8'));
+  async readAnnotations(path: string, options?: { fd: FileHandle }): Promise<Annotations | null> {
+    const match = await exec(headerExp, await createReadStream(path, buildOptions(options)));
     return match && this.commentParser.parse(match[2]).annotations;
   }
 
-  async read(path: string, options?: ReadOptions): Promise<File> {
-    const content = await readFile(path, buildReadOptions(options));
+  async read(path: string | FileHandle, options?: ReadOptions): Promise<File> {
+    const content = await readFile(path, buildOptions(options));
 
     const match = await exec(headerExp, content);
 
@@ -57,6 +51,8 @@ export class CAccessor implements Accessor {
     const prefix = firstOr('', prefixExp.exec(content));
     const headerText = header ? this.commentParser.print(header) : '';
 
-    await writeFile(path, `${prefix}${headerText}\n${content.slice(prefix.length)}`, options);
+    const stream = createWriteStream(path, buildOptions(options));
+
+    await pipeline(`${prefix}${headerText}\n${content.slice(prefix.length)}`, stream);
   }
 }

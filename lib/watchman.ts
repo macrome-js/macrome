@@ -1,58 +1,72 @@
-import { relative, join } from 'path';
-import invariant from 'invariant';
-import { Client as BaseWatchmanClient } from 'fb-watchman';
-import { when, map } from 'iter-tools-es';
+import type {
+  AsymmetricMMatchExpressionWithSuffixes,
+  MMatchExpression,
+  ReportedChange,
+  WatchmanExpression,
+} from './types';
 
-import { Matchable } from './types';
+import { relative, join, extname } from 'path';
+import { Errawr, invariant } from 'errawr';
+import { Client as BaseWatchmanClient } from 'fb-watchman';
+import * as mm from 'micromatch';
+import { when, map, asyncFlatMap, asyncToArray, execPipe } from 'iter-tools-es';
+
+import { stat } from 'fs/promises';
+import { recursiveReadFiles } from './utils/fs';
+
 import { logger as baseLogger } from './utils/logger';
+import { asArray, mergeMatchers } from './matchable';
 
 const logger = baseLogger.get('watchman');
 
-const matchSettings = {
-  includedotfiles: true,
-  noescape: true,
+const makeMatcher = (expr: MMatchExpression) => {
+  return expr ? mm.matcher(asArray(expr).join('|')) : undefined;
 };
 
-function noneOf(files: Iterable<Array<any>>) {
-  const files_ = [...files];
-  return files_ && files_.length ? [['not', ['anyof', ...files_]]] : [];
-}
+const compoundExpr = (name: string, ...terms: Array<unknown>) => {
+  return terms.length === 0 ? null : [name, terms.length === 1 ? terms[0] : ['anyof', ...terms]];
+};
 
-type SubscriptionOptions = {
-  expression: any;
+export type QueryOptions = {
   since?: string;
   fields?: Array<string>;
-  drop?: Array<string>;
-  defer?: Array<string>;
+};
+
+export type SubscriptionOptions = QueryOptions & {
+  drop?: string | Array<string>;
+  defer?: string | Array<string>;
   defer_vcs?: boolean;
-  relative_root?: string;
 };
 
-type File = {
-  exists: boolean;
-  new: boolean;
-  name: string;
-};
-
-export function expressionFromMatchable(matchable: Matchable): any {
-  const { files, excludeFiles } = matchable;
-  const fileExpr = (glob: string) => ['match', glob, 'wholename', matchSettings];
-
-  return ['allof', ['type', 'f'], ...noneOf(map(fileExpr, excludeFiles)), ...map(fileExpr, files)];
-}
-
-type SubscriptionEvent = {
+export type SubscriptionEvent = {
   subscription: string;
-  files: Array<File>;
+  files: Array<any>;
 };
 
-type OnEvent = (files: Array<File>) => Promise<unknown>;
+type OnEvent = (changes: Array<ReportedChange>) => Promise<unknown>;
 
-class WatchmanSubscription {
+const watchmanChangeToMacromeChange = ({
+  name: path,
+  exists,
+  new: new_,
+  mtime_ms: mtimeMs,
+}: any): ReportedChange => ({
+  op: !exists ? 'D' : new_ ? 'A' : 'M',
+  path,
+  mtimeMs,
+});
+
+export class WatchmanSubscription {
+  expression: AsymmetricMMatchExpressionWithSuffixes | null;
   name: string;
   onEvent: OnEvent;
 
-  constructor(subscription: any, onEvent: OnEvent) {
+  constructor(
+    expression: AsymmetricMMatchExpressionWithSuffixes | null,
+    subscription: any,
+    onEvent: OnEvent,
+  ) {
+    this.expression = expression;
     this.name = subscription.subscribe;
     this.onEvent = onEvent;
 
@@ -62,10 +76,15 @@ class WatchmanSubscription {
   async __onEvent(message: SubscriptionEvent): Promise<void> {
     try {
       const { files, subscription } = message;
-      if (subscription && files && files.length) await this.onEvent(files);
-    } catch (e) {
+
+      if (files) {
+        const files_ = files.map(watchmanChangeToMacromeChange);
+
+        if (subscription && files && files.length) await this.onEvent(files_);
+      }
+    } catch (e: any) {
       // TODO use new EventEmitter({ captureRejections: true }) once stable
-      logger.error(e.stack);
+      logger.error('\n' + Errawr.print(e));
     }
   }
 }
@@ -74,6 +93,7 @@ export class WatchmanClient extends BaseWatchmanClient {
   root: string;
   watchRoot: string;
   subscriptions: Map<string, WatchmanSubscription>;
+  private _capabilities: Record<string, boolean> | null = null;
 
   constructor(root: string) {
     super();
@@ -82,7 +102,7 @@ export class WatchmanClient extends BaseWatchmanClient {
     this.subscriptions = new Map();
 
     this.on('subscription', (event) => {
-      logger.debug(event);
+      logger.debug('<-', event);
       const subscription = this.subscriptions.get(event.subscription);
       if (subscription) subscription.__onEvent(event);
     });
@@ -92,45 +112,43 @@ export class WatchmanClient extends BaseWatchmanClient {
     return this.watchRoot && relative(this.watchRoot, this.root);
   }
 
-  async watchProject(path: string): Promise<any> {
-    const resp = await this.command('watch-project', path);
-    this.watchRoot = resp.watch;
-    return resp;
+  get capabilities(): Record<string, boolean> {
+    const capabilities = this._capabilities;
+    if (capabilities == null) {
+      throw new Error('You must call watchmanClient.version() with the capabilities you may need');
+    }
+    return capabilities;
   }
 
-  async version(options: { required?: Array<string> } = {}): Promise<any> {
-    return await this.command('version', options);
-  }
+  __expressionFrom(
+    asymmetric: AsymmetricMMatchExpressionWithSuffixes | null | undefined,
+  ): WatchmanExpression {
+    const { suffixSet } = this.capabilities;
+    const { include, exclude, suffixes = [] } = asymmetric || {};
+    const fileExpr = (glob: string) => ['pcre', mm.makeRe(glob).source, 'wholename'];
+    // In macrome an excluded directory does not have its files traversed
+    // Watchman doesn't work like that, but we can simulate it by matching prefixes
+    // That is: if /foo/bar can match /foo/bar/baz, then the /foo/bar directory is fully excluded
+    const dirExpr = (glob: string) => {
+      const re = mm.makeRe(glob + '/**');
+      return ['pcre', re.source, 'wholename'];
+    };
+    const excludeExpr = compoundExpr('not', ...map(dirExpr, asArray(exclude)));
+    const includeExpr = [...map(fileExpr, asArray(include))];
+    const suffixExpr = suffixSet
+      ? ['suffix', suffixes]
+      : suffixes.length
+      ? ['anyof', ...suffixes.map((suffix) => ['suffix', suffix])]
+      : null;
 
-  async clock(): Promise<any> {
-    return await this.command('clock', this.watchRoot);
-  }
-
-  async flushSubscriptions(options = { sync_timeout: 2000 }): Promise<any> {
-    return await this.command('flush-subscriptions', this.watchRoot, options);
-  }
-
-  async subscribe(
-    path: string,
-    subscriptionName: string,
-    options: SubscriptionOptions,
-    onEvent: OnEvent,
-  ): Promise<WatchmanSubscription> {
-    const { expression, ...options_ } = options;
-
-    invariant(this.watchRoot, 'You must call macrome.watchProject() before macrome.subscribe()');
-
-    const response = await this.command('subscribe', this.watchRoot, subscriptionName, {
-      ...options_,
-      relative_root: relative(this.watchRoot, join(this.root, path)),
-      ...when(expression, { expression }),
-    });
-
-    const subscription = new WatchmanSubscription(response, onEvent);
-
-    this.subscriptions.set(subscriptionName, subscription);
-
-    return subscription;
+    return [
+      'allof',
+      ['type', 'f'],
+      ...when(excludeExpr, [excludeExpr]),
+      ...when(includeExpr, includeExpr),
+      // See https://facebook.github.io/watchman/docs/expr/suffix.html#suffix-set
+      ...when(suffixExpr, [suffixExpr]),
+    ];
   }
 
   async command(command: string, ...args: Array<any>): Promise<any> {
@@ -152,13 +170,106 @@ export class WatchmanClient extends BaseWatchmanClient {
             );
           } else {
             logger.debug('<-', resp);
+
             resolve(resp);
           }
         });
-      } catch (e) {
+      } catch (e: any) {
         e.message += `\nCommand: ${JSON.stringify(fullCommand, null, 2)}`;
         throw e;
       }
     });
   }
+
+  async watchProject(path: string): Promise<any> {
+    const resp = await this.command('watch-project', path);
+    this.watchRoot = resp.watch;
+    return resp;
+  }
+
+  async version(
+    options: { required?: Array<string>; optional?: Array<string> } = {},
+  ): Promise<{ version: string; capabilities: Record<string, boolean> }> {
+    const resp = await this.command('version', options);
+    this._capabilities = resp.capabilities;
+    return resp;
+  }
+
+  async clock(): Promise<any> {
+    return await this.command('clock', this.watchRoot);
+  }
+
+  async query(
+    path: string,
+    expression?: AsymmetricMMatchExpressionWithSuffixes | null,
+    options?: QueryOptions,
+  ): Promise<any> {
+    invariant(this.watchRoot, 'You must call watchman.watchProject() before watchman.query()');
+
+    const resp = await this.command('query', this.watchRoot, {
+      ...options,
+      relative_root: relative(this.watchRoot, join(this.root, path)),
+      ...when(expression, { expression: this.__expressionFrom(expression) }),
+    });
+
+    return {
+      ...resp,
+      files: resp.files.map(watchmanChangeToMacromeChange),
+    };
+  }
+
+  async subscribe(
+    path: string,
+    subscriptionName: string,
+    expression: AsymmetricMMatchExpressionWithSuffixes | null,
+    options: SubscriptionOptions,
+    onEvent: OnEvent,
+  ): Promise<WatchmanSubscription> {
+    invariant(this.watchRoot, 'You must call watchman.watchProject() before watchman.subscribe()');
+
+    const response = await this.command('subscribe', this.watchRoot, subscriptionName, {
+      ...options,
+      relative_root: relative(this.watchRoot, join(this.root, path)),
+      ...when(expression, () => ({ expression: this.__expressionFrom(expression) })),
+    });
+
+    const subscription = new WatchmanSubscription(expression, response, onEvent);
+
+    this.subscriptions.set(subscriptionName, subscription);
+
+    return subscription;
+  }
+}
+
+// Mimic behavior of watchman's initial build so that `macrome build` does not rely on the watchman service
+export async function standaloneQuery(
+  root: string,
+  expression?: AsymmetricMMatchExpressionWithSuffixes | null,
+): Promise<Array<ReportedChange>> {
+  const { include, exclude, suffixes } = expression || {};
+  const suffixSet = new Set(suffixes);
+  const shouldInclude = mergeMatchers(
+    (path) => suffixSet.has(extname(path).slice(1)),
+    makeMatcher(include),
+  );
+  const shouldExclude = makeMatcher(exclude);
+
+  return await execPipe(
+    recursiveReadFiles(root, { shouldInclude, shouldExclude }),
+    asyncFlatMap(async (path) => {
+      try {
+        const stats = await stat(join(root, path));
+        return [
+          {
+            op: 'A' as const,
+            path,
+            mtimeMs: Math.floor(stats.mtimeMs),
+          },
+        ];
+      } catch (e) {
+        return [];
+      }
+    }),
+    asyncToArray,
+  );
 }

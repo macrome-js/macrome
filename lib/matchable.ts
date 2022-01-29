@@ -1,32 +1,56 @@
-import { Matchable } from './types';
+import type { AsymmetricMMatchExpression, Matcher, MMatchExpression } from './types';
 
 import { matcher as mmMatcher } from 'micromatch';
+import { filter, joinWithSeq, notNil, stringFrom } from 'iter-tools-es';
 
-export { Matchable };
+export type { AsymmetricMMatchExpression, Matcher, MMatchExpression };
 
-export type Matcher = (path: string) => boolean;
+export const defaultMatchers = {
+  include: (): boolean => true,
+  exclude: (): boolean => false,
+};
 
-function matchExpression(
-  expr: string | Array<string> | undefined,
-  emptyMatcher: () => boolean,
-): Matcher {
+const { isArray } = Array;
+const isString = (value: any): value is string => typeof value === 'string';
+
+export const asArray = <T>(value: T | null | undefined | Array<T | null | undefined>): Array<T> =>
+  value == null ? [] : !isArray(value) ? [value] : value.filter(notNil);
+
+export function expressionMatcher(expr: MMatchExpression, type: 'include' | 'exclude'): Matcher {
   let isMatch;
-  const isArray = Array.isArray(expr);
 
-  if (expr == null || (isArray && !expr.length)) isMatch = emptyMatcher;
-  else if (typeof expr === 'string') isMatch = mmMatcher(expr);
-  else if (isArray) isMatch = mmMatcher(`(${expr.join('|')})`);
-  else throw new Error('file matching pattern was not a string, Array, or null');
+  if (expr == null || (isArray(expr) && !expr.length)) isMatch = defaultMatchers[type];
+  else if (isString(expr)) isMatch = mmMatcher(expr);
+  else if (isArray(expr)) {
+    isMatch = mmMatcher(`(${stringFrom(joinWithSeq('|', filter(isString, expr)))})`);
+  } else throw new Error('file matching pattern was not a string, Array, or null');
 
   return isMatch;
 }
 
-const matchableMatchers: WeakMap<Matchable, Matcher> = new WeakMap();
+export const mergeMatchers = (
+  a: Matcher | undefined,
+  b: Matcher | undefined,
+): Matcher | undefined => {
+  return a && b ? (path: string) => a(path) && b(path) : a || b;
+};
 
-export function matcher(matchable: Matchable): Matcher {
+export function expressionMerger(
+  exprA: MMatchExpression,
+  exprB: MMatchExpression,
+): MMatchExpression {
+  if (exprB == null) return exprA;
+  if (exprA == null) return exprB;
+
+  return [...asArray(exprA), ...asArray(exprB)];
+}
+
+const matchableMatchers: WeakMap<AsymmetricMMatchExpression, Matcher> = new WeakMap();
+
+export function matcher(matchable: AsymmetricMMatchExpression): Matcher {
   if (!matchableMatchers.has(matchable)) {
-    const includeMatcher = matchExpression(matchable.files, () => true);
-    const excludeMatcher = matchExpression(matchable.excludeFiles, () => false);
+    const includeMatcher = expressionMatcher(matchable.include, 'include');
+    const excludeMatcher = expressionMatcher(matchable.exclude, 'exclude');
 
     matchableMatchers.set(
       matchable,
@@ -36,6 +60,6 @@ export function matcher(matchable: Matchable): Matcher {
   return matchableMatchers.get(matchable)!;
 }
 
-export function matches(path: string, matchable: Matchable): boolean {
+export function matches(path: string, matchable: AsymmetricMMatchExpression): boolean {
   return matcher(matchable)(path);
 }

@@ -1,3 +1,3 @@
-## Access modules
+## Accessors
 
-Access modules describe how to interact with certain kinds of generated files on disk. Their responsibilities are understanding macrome headers: detecting, parsing, and eliding header content for input streams and printing headers into output streams.
+Accessors describe how to read and write generated files with headers. There are separate accessors for each supported header comment format. The correct accessor is expected to be looked up by file extension.

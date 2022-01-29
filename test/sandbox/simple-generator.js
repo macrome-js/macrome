@@ -4,8 +4,8 @@ const { dirname, join, basename } = require('path');
 
 class SimpleGenerator {
   constructor() {
-    this.files = ['lib/*.js'];
-    this.excludeFiles = ['**/generated-*'];
+    this.include = ['lib/*.js'];
+    this.exclude = ['**/generated-*'];
   }
 
   getDestPath(path) {

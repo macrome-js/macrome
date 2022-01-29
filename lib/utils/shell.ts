@@ -6,7 +6,9 @@ export function run(cmd: string, args: Array<string>, dir = process.cwd()): Buff
     throw result.error;
   } else if (result.status !== 0) {
     throw new Error(
-      `Failed to execute \`${cmd} ${args.join(' ')}\`. Command exited with status ${result.status}`,
+      `Failed to execute \`${cmd} ${args.join(' ')}\`. Command exited with status ${
+        result.status
+      }\n${result.stderr.toString()}`,
     );
   } else {
     return result.stdout;

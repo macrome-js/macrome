@@ -69,7 +69,10 @@ In a config, a generator is specified as either `generatorPath` or `[generatorPa
 The following is the `Generator` interface:
 
 ```js
-export interface Generator<T> extends Matchable {
+interface Generator<T> {
+  include?: Glob | Array<Glob> | null;
+  exclude?: Glob | Array<Glob> | null;
+
   // eslint-disable-next-line @typescript-eslint/no-misused-new
   new (options: Record<string, any>): Generator<T>;
 

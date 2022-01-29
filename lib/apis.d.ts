@@ -1,24 +1,33 @@
+/// <reference types="node" />
+import { Errawr } from 'errawr';
 import type { Macrome } from './macrome';
-import type { WriteOptions, ReadOptions, Accessor } from './types';
-import type { Changeset } from './changeset';
+import type { WriteOptions, ReadOptions, Accessor, MappableChange, Annotations } from './types';
+import { FileHandle } from 'fs/promises';
 declare const _: unique symbol;
+export declare class ApiError extends Errawr {
+    get name(): string;
+}
 declare type ApiProtected = {
     destroyed: boolean;
     macrome: Macrome;
 };
-declare class ApiError extends Error {
-    verb: string;
-    constructor(message: string, verb: string);
-}
+/**
+ * Api is a facade over the Macrome class which exposes the functionality which should be accessible to generators
+ */
 export declare class Api {
     protected [_]: ApiProtected;
     constructor(macrome: Macrome);
     protected __assertNotDestroyed(methodName: string): void;
+    get macrome(): Macrome;
+    get destroyed(): boolean;
     destroy(): void;
     protected decorateError(error: Error, verb: string): Error;
-    getAnnotations(_destPath?: string): Map<string, any>;
+    buildAnnotations(_destPath?: string): Map<string, any>;
     resolve(path: string): string;
     accessorFor(path: string): Accessor | null;
+    getAnnotations(path: string, options?: {
+        fd?: FileHandle;
+    }): Promise<Annotations | null>;
     read(path: string, options: ReadOptions): Promise<string>;
     write(path: string, content: string, options: WriteOptions): Promise<void>;
 }
@@ -27,24 +36,21 @@ declare type GeneratorApiProtected = ApiProtected & {
 };
 export declare class GeneratorApi extends Api {
     protected [_]: GeneratorApiProtected;
-    constructor(macrome: Macrome, generatorPath: string);
     static fromApi(api: Api, generatorPath: string): GeneratorApi;
-    getAnnotations(_destPath?: string): Map<string, any>;
-}
-declare class MapApiError extends ApiError {
-    generatorPath: string;
-    destPath?: string;
-    constructor(message: string, verb: string, generatorPath: string, destPath?: string);
+    constructor(macrome: Macrome, generatorPath: string);
+    get generatorPath(): string;
+    buildAnnotations(_destPath?: string): Map<string, any>;
 }
 declare type MapChangeApiProtected = GeneratorApiProtected & {
-    changeset: Changeset;
+    change: MappableChange;
 };
 export declare class MapChangeApi extends GeneratorApi {
     protected [_]: MapChangeApiProtected;
-    constructor(macrome: Macrome, generatorPath: string, changeset: Changeset);
-    static fromGeneratorApi(generatorApi: GeneratorApi, changeset: Changeset): MapChangeApi;
-    protected decorateError(error: Error, verb: string): MapApiError;
-    getAnnotations(destPath: string): Map<string, any>;
+    static fromGeneratorApi(generatorApi: GeneratorApi, change: MappableChange): MapChangeApi;
+    constructor(macrome: Macrome, generatorPath: string, change: MappableChange);
+    get change(): MappableChange;
+    protected decorateError(error: Error, verb: string): Error;
+    buildAnnotations(destPath: string): Map<string, any>;
     write(path: string, content: string, options: WriteOptions): Promise<void>;
 }
 export {};

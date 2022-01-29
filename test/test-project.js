@@ -1,41 +1,41 @@
+const { relative } = require('path');
 const { writeFile, unlink } = require('fs').promises;
 const { Macrome } = require('../lib');
-const { run, isClean, gitStatus } = require('./utils');
+const { isClean, gitStatus, hardReset } = require('./utils');
 
-function testProject(projectRoot) {
-  let macrome;
+function testProject(root) {
+  const macrome = new Macrome({ root, quiet: true });
 
-  beforeAll(async () => {
-    process.chdir(projectRoot);
+  const rootRel = root.startsWith('/') ? relative(process.cwd(), root) : root;
 
-    if (!isClean('.')) {
-      throw new Error('Test directory was not clean');
-    }
-
-    macrome = new Macrome({ quiet: true });
+  beforeAll(() => {
+    hardReset(rootRel);
   });
 
-  afterAll(async () => {
-    run('git', ['add', '.']);
-    run('git', ['checkout', 'HEAD', '--', projectRoot]);
+  afterAll(() => {
+    hardReset(rootRel);
   });
 
   it('cleans', async () => {
     await macrome.clean();
 
-    expect(gitStatus()).toMatchSnapshot();
+    expect(gitStatus(rootRel)).toMatchSnapshot();
   });
 
   it('builds', async () => {
+    await macrome.clean();
     await macrome.build();
 
-    expect(isClean('.')).toBe(true);
+    // build should reverse the effects of clean
+    expect(gitStatus(rootRel)).toEqual([]);
   });
 
   it('checks', async () => {
-    const clean = await macrome.check();
+    hardReset(rootRel);
 
-    expect(clean).toBe(true);
+    const isClean = await macrome.check();
+
+    expect(isClean).toBe(true);
   });
 
   describe('when stale files are present', () => {
@@ -48,29 +48,15 @@ function testProject(projectRoot) {
     });
 
     it('removes them', async () => {
-      expect(isClean('.')).toBe(false);
+      expect(isClean(rootRel)).toBe(false);
 
       await macrome.build();
 
-      expect(isClean('.')).toBe(true);
+      expect(isClean(rootRel)).toBe(true);
     });
   });
 
-  return {
-    watchSetup() {
-      beforeAll(async () => {
-        const build = jest.spyOn(macrome, 'build').mockImplementation(async () => {});
-
-        await macrome.watch();
-
-        expect(build).toHaveBeenCalledTimes(1);
-      });
-
-      afterAll(async () => {
-        await macrome.stopWatching();
-      });
-    },
-  };
+  return macrome;
 }
 
 module.exports = { testProject };
