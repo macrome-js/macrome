@@ -23,7 +23,6 @@ describe('simple project', () => {
       const originalContent = await readFile(filePath, 'utf8');
 
       await unlink(filePath);
-      macrome.logger.get('test').debug(`unlinking lib/simple-project.js`);
 
       await eventually(() => {
         expect(gitStatus(rootDir)).toMatchStateInlineSnapshot(`
@@ -34,7 +33,6 @@ describe('simple project', () => {
         `);
       });
 
-      macrome.logger.get('test').debug(`writing modified lib/simple-project.js`);
       await writeFile(filePath, originalContent + '\n');
 
       await eventually(() => {
@@ -46,7 +44,6 @@ describe('simple project', () => {
         `);
       });
 
-      macrome.logger.get('test').debug(`writing original lib/simple-project.js`);
       await writeFile(filePath, originalContent);
 
       await eventually(() => {

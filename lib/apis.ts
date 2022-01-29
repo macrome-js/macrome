@@ -103,13 +103,13 @@ export class Api {
       },
       content,
     };
-    const now = Date.now();
+    const before = Date.now();
 
     let fd;
     try {
       fd = await open(this.resolve(path), 'a+');
       const mtimeMs = Math.floor((await fd.stat()).mtimeMs);
-      const new_ = mtimeMs >= now; // is there a better way to implement this?
+      const new_ = mtimeMs >= before; // is there a better way to implement this?
 
       let annotations = null;
       if (!new_) {
