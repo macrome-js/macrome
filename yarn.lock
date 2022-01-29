@@ -563,10 +563,10 @@
   resolved "https://registry.npmjs.org/@iter-tools/queue/-/queue-1.5.2.tgz"
   integrity sha512-K/17A9nYbSkAEv09vNhnH2jdTimZ1QgwCFuat9dM0UjVlQYKwn1GTJVSre0V1Vva0Z8lJ6CTM8KGbCQCkshYxg==
 
-"@iter-tools/regex@^0.1.0":
-  version "0.1.1"
-  resolved "https://registry.npmjs.org/@iter-tools/regex/-/regex-0.1.1.tgz"
-  integrity sha512-reIDWykXwkRLxZITMYiwXG+CGh0/xWK4X+63MRVn5s4TwPFsAZ1mw8c5VoSGeAPLuT5XheIq5Hhtm+Hn7SxS+Q==
+"@iter-tools/regex@^0.1.2":
+  version "0.1.2"
+  resolved "https://registry.yarnpkg.com/@iter-tools/regex/-/regex-0.1.2.tgz#f732563c9e9e8c7ce3ebd64d3ebc690679d9dd31"
+  integrity sha512-POMybzzFzucYL6ZM/HV2g/1MY7B+9NplB6CQ5L7AEqVrWBc0+6ebvnuD1L6jIIG8wxRE4v0pqzN1xlpm+majiQ==
   dependencies:
     "@iter-tools/imm-stack" "^1.0.0"
     functional-red-black-tree "^1.0.1"
@@ -1697,6 +1697,7 @@ errawr@conartist6/errawr:
   dependencies:
     error-cause "^1.0.0"
     object-inspect "^1.11.0"
+    pupa "^3.1.0"
 
 error-cause@^1.0.0:
   version "1.0.3"

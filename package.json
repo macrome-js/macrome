@@ -43,7 +43,7 @@
   "dependencies": {
     "@conartist6/rd-parse": "4.0.0-rc.0",
     "@iter-tools/queue": "^1.5.1",
-    "@iter-tools/regex": "^0.1.0",
+    "@iter-tools/regex": "^0.1.2",
     "camelize": "^1.0.0",
     "errawr": "conartist6/errawr",
     "fb-watchman": "^2.0.1",
