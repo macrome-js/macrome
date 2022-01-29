@@ -563,10 +563,10 @@
   resolved "https://registry.npmjs.org/@iter-tools/queue/-/queue-1.5.2.tgz"
   integrity sha512-K/17A9nYbSkAEv09vNhnH2jdTimZ1QgwCFuat9dM0UjVlQYKwn1GTJVSre0V1Vva0Z8lJ6CTM8KGbCQCkshYxg==
 
-"@iter-tools/regex@^0.1.2":
-  version "0.1.2"
-  resolved "https://registry.yarnpkg.com/@iter-tools/regex/-/regex-0.1.2.tgz#f732563c9e9e8c7ce3ebd64d3ebc690679d9dd31"
-  integrity sha512-POMybzzFzucYL6ZM/HV2g/1MY7B+9NplB6CQ5L7AEqVrWBc0+6ebvnuD1L6jIIG8wxRE4v0pqzN1xlpm+majiQ==
+"@iter-tools/regex@^0.1.3":
+  version "0.1.3"
+  resolved "https://registry.yarnpkg.com/@iter-tools/regex/-/regex-0.1.3.tgz#825f023bebb8fa847d620584b7f00ae143dfa8e8"
+  integrity sha512-BF7ztfP32eQIRPtP2RUEmQoi2K/Hdnrd4nPFpfZ24fFDLJvrDGEBlU2bhHmvcAugqiuBTJyIRU2k4L2P38sryQ==
   dependencies:
     "@iter-tools/imm-stack" "^1.0.0"
     functional-red-black-tree "^1.0.1"
@@ -1691,13 +1691,12 @@ enquirer@^2.3.5, enquirer@^2.3.6:
   dependencies:
     ansi-colors "^4.1.1"
 
-errawr@conartist6/errawr:
+errawr@conartist6/errawr#870ee66:
   version "0.1.0"
   resolved "https://codeload.github.com/conartist6/errawr/tar.gz/870ee66ea50c50b8b64d867169795b41e43c2409"
   dependencies:
     error-cause "^1.0.0"
     object-inspect "^1.11.0"
-    pupa "^3.1.0"
 
 error-cause@^1.0.0:
   version "1.0.3"
