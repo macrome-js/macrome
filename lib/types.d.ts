@@ -4,37 +4,76 @@ import type { MapChangeApi, GeneratorApi } from './apis';
 export type Annotations = Map<string, any>;
 
 export type FileState = {
-  path: string;
   mtimeMs: number;
   annotations: Annotations | null;
   generatedPaths: Set<string>;
 };
 
-export type DeleteChange = {
-  op: 'D';
-  path: string;
-  state: FileState;
-};
-
-export type ModifyChange = {
-  op: 'M';
-  path: string;
-  state: FileState;
-  mtimeMs: number;
-  annotations?: Annotations | null;
-};
-
-export type AddChange = {
+export type ReportedAddChange = {
   op: 'A';
   path: string;
-  state: null;
   mtimeMs: number;
-  annotations?: Annotations | null;
 };
 
-export type Change = AddChange | ModifyChange | DeleteChange;
+export type ReportedModifyChange = {
+  op: 'M';
+  path: string;
+  mtimeMs: number;
+};
 
-export type MappableChange = AddChange | ModifyChange;
+export type ReportedDeleteChange = {
+  op: 'D';
+  path: string;
+  mtimeMs: null;
+};
+
+export type AnnotatedAddChange = {
+  op: 'A';
+  reported: ReportedAddChange;
+  annotations: Annotations | null;
+};
+
+export type AnnotatedModifyChange = {
+  op: 'M';
+  reported: ReportedModifyChange;
+  annotations: Annotations | null;
+};
+
+export type AnnotatedDeleteChange = {
+  op: 'D';
+  reported: ReportedDeleteChange;
+  annotations: null;
+};
+
+export type EnqueuedAddChange = {
+  op: 'A';
+  path: string;
+  annotated: AnnotatedAddChange;
+  state: FileState;
+  prevState: null;
+};
+
+export type EnqueuedModifyChange = {
+  op: 'M';
+  path: string;
+  annotated: AnnotatedModifyChange;
+  state: FileState;
+  prevState: FileState;
+};
+
+export type EnqueuedDeleteChange = {
+  op: 'D';
+  path: string;
+  annotated: AnnotatedDeleteChange;
+  state: null;
+  prevState: FileState;
+};
+
+export type ReportedChange = ReportedAddChange | ReportedModifyChange | ReportedDeleteChange;
+export type AnnotatedChange = AnnotatedAddChange | AnnotatedModifyChange | AnnotatedDeleteChange;
+export type EnqueuedChange = EnqueuedAddChange | EnqueuedModifyChange | EnqueuedDeleteChange;
+
+export type MappableChange = EnqueuedAddChange | EnqueuedModifyChange;
 
 export type FileHeader = {
   annotations: Annotations | null;
@@ -101,7 +140,7 @@ export interface Generator<T> extends AsymmetricMMatchExpression {
 
   initialize?(api: GeneratorApi): Promise<unknown>;
 
-  map?(api: MapChangeApi, change: Change): Promise<T>;
+  map?(api: MapChangeApi, change: EnqueuedChange): Promise<T>;
 
   reduce?(api: GeneratorApi, changeMap: Map<string, T>): Promise<unknown>;
 

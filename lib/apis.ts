@@ -8,6 +8,8 @@ import type {
   File,
   MappableChange,
   Annotations,
+  AnnotatedAddChange,
+  AnnotatedModifyChange,
 } from './types';
 
 import { relative, dirname } from 'path';
@@ -107,13 +109,15 @@ export class Api {
     try {
       fd = await open(this.resolve(path), 'a+');
       const mtimeMs = Math.floor((await fd.stat()).mtimeMs);
-      const new_ = mtimeMs > now; // is there a better way to implement this?
+      const new_ = mtimeMs >= now; // is there a better way to implement this?
 
       let annotations = null;
       if (!new_) {
         annotations = await accessor.readAnnotations(this.resolve(path), { fd });
         if (annotations === null) {
-          throw new Error('macrome will not overwrite non-generated files');
+          throw new Errawr(rawr('macrome cannot overwrite non-generated {path}'), {
+            info: { path },
+          });
         }
       }
 
@@ -127,12 +131,16 @@ export class Api {
       // First there may not be a watcher, and we want things to work basically the same way when
       // the watcher is and is not present. Second we want to ensure that our causally linked
       // changes are always batched so that we can detect non-terminating cycles.
+      const op = new_ ? 'A' : 'M';
       macrome.enqueue({
-        op: new_ ? 'A' : 'M',
-        path,
-        mtimeMs,
-        state: null!,
-      });
+        op,
+        reported: {
+          op,
+          path,
+          mtimeMs,
+        },
+        annotations,
+      } as AnnotatedAddChange | AnnotatedModifyChange);
     } catch (e: any) {
       await fd?.close();
       throw this.decorateError(e, 'write');
@@ -197,7 +205,7 @@ export class MapChangeApi extends GeneratorApi {
 
     return new ApiError(rawr('macrome {{verb}} failed', { rest: true }), {
       cause: error,
-      info: { verb, generator: generatorPath, change },
+      info: { verb, generator: generatorPath, change: change.annotated.reported },
     });
   }
 
@@ -211,10 +219,11 @@ export class MapChangeApi extends GeneratorApi {
   }
 
   async write(path: string, content: string, options: WriteOptions): Promise<void> {
-    const { macrome, change } = this[_];
+    const { change } = this[_];
+    const { state } = change;
 
     await super.write(path, content, options);
 
-    macrome.state.get(change.path)!.generatedPaths.add(path);
+    state.generatedPaths.add(path);
   }
 }

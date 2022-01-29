@@ -23,8 +23,8 @@ describe('monorepo', () => {
     const root = sandboxPath('projects/monorepo');
 
     it('watch', async () => {
-      const aPath = 'project-a/lib/project-a.js';
-      const bPath = 'project-b/lib/project-b.js';
+      const aPath = macromA.resolve('lib/project-a.js');
+      const bPath = macromB.resolve('lib/project-b.js');
       const aContent = await readFile(aPath, 'utf8');
       const bContent = await readFile(bPath, 'utf8');
 

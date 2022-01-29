@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import type { FileHandle } from 'fs/promises';
-import type { FileState, Accessor, Generator, Change, Annotations, AsymmetricMMatchExpressionWithSuffixes } from './types';
+import type { FileState, Accessor, Generator, ReportedChange, AnnotatedChange, EnqueuedChange, Annotations, AsymmetricMMatchExpressionWithSuffixes } from './types';
 import Queue from '@iter-tools/queue';
 import { WatchmanClient } from './watchman';
 import { Api, GeneratorApi } from './apis';
@@ -21,7 +21,7 @@ export declare class Macrome {
     watchClient: WatchmanClient | null;
     generators: Map<string, Array<Generator<unknown>>>;
     generatorsMeta: WeakMap<Generator<unknown>, GeneratorMeta>;
-    queue: Queue<Change> | null;
+    queue: Queue<EnqueuedChange> | null;
     accessorsByFileType: Map<string, Accessor>;
     state: Map<string, FileState>;
     constructor(apiOptions: Options);
@@ -31,17 +31,17 @@ export declare class Macrome {
     protected __instantiateGenerators(generatorPath: string): Promise<void>;
     protected __forMatchingGenerators(path: string, cb: (generator: Generator<unknown>, meta: GeneratorMeta) => unknown): Promise<void>;
     protected __getBaseExpression(): AsymmetricMMatchExpressionWithSuffixes;
-    protected __decorateChangeWithAnnotations(change: Change): Promise<Change>;
-    protected __scanChanges(): Promise<Array<Change>>;
+    protected __decorateChangeWithAnnotations(change: ReportedChange): Promise<AnnotatedChange>;
+    protected __scanChanges(): Promise<Array<AnnotatedChange>>;
     accessorFor(path: string): Accessor | null;
     getAnnotations(path: string, options?: {
         fd?: FileHandle;
     }): Promise<Annotations | null>;
     clean(): Promise<void>;
-    enqueue(change: Change): void;
-    __enqueue(change: Change): void;
+    enqueue(change: AnnotatedChange): void;
+    __enqueue(change: AnnotatedChange): void;
     processChanges(): Promise<void>;
-    __build(changes: Array<Change>): Promise<void>;
+    __build(changes: Array<AnnotatedChange>): Promise<void>;
     build(): Promise<void>;
     watch(): Promise<void>;
     stopWatching(): void;

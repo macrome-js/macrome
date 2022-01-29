@@ -1693,7 +1693,7 @@ enquirer@^2.3.5, enquirer@^2.3.6:
 
 errawr@conartist6/errawr:
   version "0.1.0"
-  resolved "https://codeload.github.com/conartist6/errawr/tar.gz/f0b9d7dbd381df28e31127ccad8564005483c407"
+  resolved "https://codeload.github.com/conartist6/errawr/tar.gz/870ee66ea50c50b8b64d867169795b41e43c2409"
   dependencies:
     error-cause "^1.0.0"
     object-inspect "^1.11.0"

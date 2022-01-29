@@ -1,7 +1,7 @@
 const { relative } = require('path');
 const { writeFile, unlink } = require('fs').promises;
 const { Macrome } = require('../lib');
-const { isClean, gitStatus, hardReset, run } = require('./utils');
+const { isClean, gitStatus, hardReset } = require('./utils');
 
 function testProject(root) {
   const macrome = new Macrome({ root, quiet: true });
@@ -17,7 +17,7 @@ function testProject(root) {
   });
 
   it('cleans', async () => {
-    run('node', ['../../../../bin/cli.js', 'clean'], root);
+    await macrome.clean();
 
     expect(gitStatus(rootRel)).toMatchSnapshot();
   });

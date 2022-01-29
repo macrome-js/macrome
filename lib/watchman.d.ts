@@ -1,4 +1,4 @@
-import type { AsymmetricMMatchExpressionWithSuffixes, Change, WatchmanExpression } from './types';
+import type { AsymmetricMMatchExpressionWithSuffixes, ReportedChange, WatchmanExpression } from './types';
 import { Client as BaseWatchmanClient } from 'fb-watchman';
 export declare type QueryOptions = {
     since?: string;
@@ -13,7 +13,7 @@ export declare type SubscriptionEvent = {
     subscription: string;
     files: Array<any>;
 };
-declare type OnEvent = (changes: Array<Change>) => Promise<unknown>;
+declare type OnEvent = (changes: Array<ReportedChange>) => Promise<unknown>;
 export declare class WatchmanSubscription {
     expression: AsymmetricMMatchExpressionWithSuffixes | null;
     name: string;
@@ -43,5 +43,5 @@ export declare class WatchmanClient extends BaseWatchmanClient {
     query(path: string, expression?: AsymmetricMMatchExpressionWithSuffixes | null, options?: QueryOptions): Promise<any>;
     subscribe(path: string, subscriptionName: string, expression: AsymmetricMMatchExpressionWithSuffixes | null, options: SubscriptionOptions, onEvent: OnEvent): Promise<WatchmanSubscription>;
 }
-export declare function standaloneQuery(root: string, expression?: AsymmetricMMatchExpressionWithSuffixes | null): Promise<Array<Change>>;
+export declare function standaloneQuery(root: string, expression?: AsymmetricMMatchExpressionWithSuffixes | null): Promise<Array<ReportedChange>>;
 export {};

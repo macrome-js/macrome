@@ -3,9 +3,14 @@ import type {
   FileState,
   Accessor,
   Generator,
-  Change,
+  ReportedChange,
+  AnnotatedChange,
+  EnqueuedChange,
   Annotations,
   AsymmetricMMatchExpressionWithSuffixes,
+  MappableChange,
+  AnnotatedAddChange,
+  AnnotatedModifyChange,
 } from './types';
 
 import { join, dirname, basename, extname, relative } from 'path';
@@ -28,7 +33,7 @@ import { openKnownFileForReading } from './utils/fs';
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
 const verbsByOp = { A: 'add', D: 'remove', M: 'update' };
-const verbFor = (change: Change) => verbsByOp[change.op];
+const verbFor = (change: { op: 'A' | 'D' | 'M' }) => verbsByOp[change.op];
 
 type GeneratorMeta = {
   api: GeneratorApi;
@@ -46,7 +51,7 @@ export class Macrome {
   watchClient: WatchmanClient | null = null;
   generators: Map<string, Array<Generator<unknown>>>;
   generatorsMeta: WeakMap<Generator<unknown>, GeneratorMeta>;
-  queue: Queue<Change> | null = null;
+  queue: Queue<EnqueuedChange> | null = null;
   accessorsByFileType: Map<string, Accessor>;
   state: Map<string, FileState>;
 
@@ -119,7 +124,7 @@ export class Macrome {
     for (const stub of stubs) {
       const mappings = new Map();
       const generator = new Generator(stub.options);
-      const api = GeneratorApi.fromApi(this.api, this.relative(generatorPath));
+      const api = GeneratorApi.fromApi(this.api, relative(this.watchRoot, generatorPath));
 
       await generator.initialize?.(api);
 
@@ -151,20 +156,29 @@ export class Macrome {
     };
   }
 
-  protected async __decorateChangeWithAnnotations(change: Change): Promise<Change> {
+  protected async __decorateChangeWithAnnotations(
+    change: ReportedChange,
+  ): Promise<AnnotatedChange> {
     const path = this.resolve(change.path);
     const accessor = this.accessorFor(path);
-    if (accessor && change.op !== 'D') {
-      const fd = await openKnownFileForReading(path, change.mtimeMs);
-      const annotations = await accessor.readAnnotations(path, { fd });
-      await fd.close();
-      return { ...change, annotations };
+
+    if (change.op !== 'D') {
+      let annotations = null;
+
+      if (accessor) {
+        const fd = await openKnownFileForReading(path, change.mtimeMs);
+        annotations = await accessor.readAnnotations(path, { fd });
+        await fd.close();
+      }
+      return { op: change.op, reported: change, annotations } as  // why is this cast necessary???
+        | AnnotatedAddChange
+        | AnnotatedModifyChange;
     } else {
-      return change;
+      return { op: change.op, reported: change, annotations: null };
     }
   }
 
-  protected async __scanChanges(): Promise<Array<Change>> {
+  protected async __scanChanges(): Promise<Array<AnnotatedChange>> {
     const changes = await standaloneQuery(this.root, this.__getBaseExpression());
 
     return await asyncToArray(
@@ -191,16 +205,17 @@ export class Macrome {
 
     for (const change of changes) {
       if (change.op !== 'D' && change.annotations != null) {
-        await unlink(this.resolve(change.path));
+        await unlink(this.resolve(change.reported.path));
       }
     }
   }
 
-  enqueue(change: Change): void {
-    const { op, path } = change;
+  enqueue(change: AnnotatedChange): void {
+    const { reported } = change;
+    const { path } = reported;
     const state = this.state.get(path);
 
-    if (op !== 'D' ? state?.mtimeMs === change.mtimeMs : !state) {
+    if (reported.op !== 'D' ? state?.mtimeMs === reported.mtimeMs : !state) {
       // This is an "echo" change: the watcher is re-reporting it but it was already enqueued.
       return;
     }
@@ -208,26 +223,33 @@ export class Macrome {
     this.__enqueue(change);
   }
 
-  __enqueue(change: Change): void {
-    const { op, path, state } = change;
+  __enqueue(change: AnnotatedChange): void {
+    const queue = this.queue!;
+    const { reported } = change;
+    const { path } = reported;
 
-    if (op !== 'D') {
-      const { mtimeMs, annotations = null } = change;
-      const generatedPaths = state ? state.generatedPaths : new Set<string>();
-
-      this.state.set(path, { path, mtimeMs, annotations, generatedPaths });
-    } else {
-      this.state.delete(path);
-    }
-
-    change.state = this.state.get(change.path) || null;
+    const prevState = this.state.get(path) || null;
 
     logger.debug(
       `enqueueing ${verbFor(change)} ${path}` +
-        (op !== 'D' ? ` modified at ${change.mtimeMs}` : ''),
+        (reported.op !== 'D' ? ` modified at ${reported.mtimeMs}` : ''),
     );
 
-    this.queue!.push(change);
+    if (change.op !== 'D') {
+      const { annotations = null } = change;
+      const { mtimeMs } = change.reported;
+      const generatedPaths = prevState ? prevState.generatedPaths : new Set<string>();
+
+      const state = { path, mtimeMs, annotations, generatedPaths };
+
+      this.state.set(path, state);
+
+      queue.push({ op: change.op, path, annotated: change, state, prevState } as MappableChange);
+    } else {
+      this.state.delete(path);
+
+      queue.push({ op: change.op, path, annotated: change, state: null, prevState: prevState! });
+    }
   }
 
   // Where the magic happens.
@@ -257,14 +279,17 @@ export class Macrome {
       while (queue.size) {
         const change = queue.shift()!;
 
-        const { op, path, state } = change;
-        const prevGeneratedPaths = state && state.generatedPaths;
+        const { op, annotated, state, prevState } = change;
+        const { reported } = annotated;
+        const { path } = reported;
+        const prevGeneratedPaths = prevState && prevState.generatedPaths;
         const generatedPaths = new Set<string>();
+
         if (state) state.generatedPaths = generatedPaths;
 
         logger.debug(
           `executing ${verbFor(change)} ${path}` +
-            (op !== 'D' ? ` modified at ${change.mtimeMs}` : ''),
+            (reported.op !== 'D' ? ` modified at ${reported.mtimeMs}` : ''),
         );
 
         if (op !== 'D') {
@@ -277,7 +302,7 @@ export class Macrome {
 
             api.destroy();
 
-            mappings.set(change.path, mapResult);
+            mappings.set(path, mapResult);
             generatorsToReduce.add(generator);
           });
         } else {
@@ -293,7 +318,9 @@ export class Macrome {
           if (!generatedPaths.has(path) && (await this.getAnnotations(path)) !== null) {
             await unlink(this.resolve(path));
 
-            await this.enqueue({ op: 'D', path, state: null! });
+            this.enqueue(
+              await this.__decorateChangeWithAnnotations({ op: 'D', path, mtimeMs: null }),
+            );
           }
         }
 
@@ -312,24 +339,25 @@ export class Macrome {
     }
   }
 
-  async __build(changes: Array<Change>): Promise<void> {
+  async __build(changes: Array<AnnotatedChange>): Promise<void> {
     if (!this.initialized) await this.__initialize();
 
     this.queue = new Queue();
 
     for (const change of changes) {
       if (change.op !== 'D' && !change.annotations) {
-        await this.enqueue(change);
+        this.enqueue(change);
       }
     }
 
     await this.processChanges();
 
     for (const change of changes) {
+      const { reported } = change;
       // remove @generated state which were not generated
       if (change.op !== 'D' && change.annotations) {
-        if (!this.state.has(change.path)) {
-          await unlink(this.resolve(change.path));
+        if (!this.state.has(reported.path)) {
+          await unlink(this.resolve(reported.path));
         }
       }
     }
@@ -382,7 +410,9 @@ export class Macrome {
     await this.__build(
       await execPipe(
         changes,
-        asyncMap(async (change: Change) => await this.__decorateChangeWithAnnotations(change)),
+        asyncMap(
+          async (change: ReportedChange) => await this.__decorateChangeWithAnnotations(change),
+        ),
         asyncToArray,
       ),
     );

@@ -1,7 +1,7 @@
 import type {
   AsymmetricMMatchExpressionWithSuffixes,
-  Change,
   MMatchExpression,
+  ReportedChange,
   WatchmanExpression,
 } from './types';
 
@@ -43,18 +43,17 @@ export type SubscriptionEvent = {
   files: Array<any>;
 };
 
-type OnEvent = (changes: Array<Change>) => Promise<unknown>;
+type OnEvent = (changes: Array<ReportedChange>) => Promise<unknown>;
 
 const watchmanChangeToMacromeChange = ({
   name: path,
   exists,
   new: new_,
   mtime_ms: mtimeMs,
-}: any): Change => ({
+}: any): ReportedChange => ({
   op: !exists ? 'D' : new_ ? 'A' : 'M',
   path,
   mtimeMs,
-  state: null!,
 });
 
 export class WatchmanSubscription {
@@ -85,7 +84,7 @@ export class WatchmanSubscription {
       }
     } catch (e: any) {
       // TODO use new EventEmitter({ captureRejections: true }) once stable
-      logger.error(Errawr.print(e));
+      logger.error('\n' + Errawr.print(e));
     }
   }
 }
@@ -246,7 +245,7 @@ export class WatchmanClient extends BaseWatchmanClient {
 export async function standaloneQuery(
   root: string,
   expression?: AsymmetricMMatchExpressionWithSuffixes | null,
-): Promise<Array<Change>> {
+): Promise<Array<ReportedChange>> {
   const { include, exclude, suffixes } = expression || {};
   const suffixSet = new Set(suffixes);
   const shouldInclude = mergeMatchers(
@@ -265,7 +264,6 @@ export async function standaloneQuery(
             op: 'A' as const,
             path,
             mtimeMs: Math.floor(stats.mtimeMs),
-            state: null!,
           },
         ];
       } catch (e) {
