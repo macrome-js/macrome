@@ -109,7 +109,9 @@ export class Api {
     try {
       fd = await open(this.resolve(path), 'a+');
       const mtimeMs = Math.floor((await fd.stat()).mtimeMs);
-      const new_ = mtimeMs >= before; // is there a better way to implement this?
+      // -100 because Travis showed a 3ms discrepancy for reasons unknown
+      // Is there a better way to implement this?
+      const new_ = mtimeMs >= before - 100;
 
       let annotations = null;
       if (!new_) {
