@@ -7,6 +7,6 @@ addons:
 
 language: node_js
 node_js:
-  - '14'
+  - '15'
 
 script: yarn verify

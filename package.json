@@ -7,7 +7,7 @@
     "macrome": "./bin/cli.js"
   },
   "engines": {
-    "node": ">=12.9.0"
+    "node": ">=15.0.0"
   },
   "files": [
     "lib/**/*.js",
