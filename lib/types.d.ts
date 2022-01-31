@@ -48,7 +48,8 @@ export type AnnotatedDeleteChange = {
 export type EnqueuedAddChange = {
   op: 'A';
   path: string;
-  annotated: AnnotatedAddChange;
+  reported: ReportedAddChange;
+  annotations: Annotations | null;
   state: FileState;
   prevState: null;
 };
@@ -56,7 +57,8 @@ export type EnqueuedAddChange = {
 export type EnqueuedModifyChange = {
   op: 'M';
   path: string;
-  annotated: AnnotatedModifyChange;
+  reported: ReportedModifyChange;
+  annotations: Annotations | null;
   state: FileState;
   prevState: FileState;
 };
@@ -64,7 +66,8 @@ export type EnqueuedModifyChange = {
 export type EnqueuedDeleteChange = {
   op: 'D';
   path: string;
-  annotated: AnnotatedDeleteChange;
+  reported: ReportedDeleteChange;
+  annotations: null;
   state: null;
   prevState: FileState;
 };

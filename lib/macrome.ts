@@ -211,13 +211,24 @@ export class Macrome {
   }
 
   enqueue(change: AnnotatedChange): void {
-    const { reported } = change;
+    const { op, reported, annotations } = change;
     const { path } = reported;
     const state = this.state.get(path);
 
-    if (reported.op !== 'D' ? state?.mtimeMs === reported.mtimeMs : !state) {
-      // This is an "echo" change: the watcher is re-reporting it but it was already enqueued.
-      return;
+    if (op === 'D') {
+      if (!state) return;
+    } else {
+      if (state?.mtimeMs === reported.mtimeMs) {
+        // This is an "echo" change: the watcher is re-reporting it but it was already enqueued.
+        return;
+      } else {
+        const generatedFrom = annotations?.get('generatedfrom');
+        if (generatedFrom && state?.annotations?.get('generatedFrom') === generatedFrom) {
+          // The version we have is already genereated from the same source (./path#version)
+          // TODO parsed generatedFrom to be sure it includes a version
+          return;
+        }
+      }
     }
 
     this.__enqueue(change);
@@ -236,19 +247,33 @@ export class Macrome {
     );
 
     if (change.op !== 'D') {
-      const { annotations = null } = change;
-      const { mtimeMs } = change.reported;
+      const { reported, annotations = null } = change;
+      const { mtimeMs } = reported;
       const generatedPaths = prevState ? prevState.generatedPaths : new Set<string>();
 
       const state = { path, mtimeMs, annotations, generatedPaths };
 
       this.state.set(path, state);
 
-      queue.push({ op: change.op, path, annotated: change, state, prevState } as MappableChange);
+      queue.push({
+        op: change.op,
+        path,
+        reported,
+        annotations,
+        state,
+        prevState,
+      } as MappableChange);
     } else {
       this.state.delete(path);
 
-      queue.push({ op: change.op, path, annotated: change, state: null, prevState: prevState! });
+      queue.push({
+        op: change.op,
+        path,
+        reported: change.reported,
+        annotations: null,
+        state: null,
+        prevState: prevState!,
+      });
     }
   }
 
@@ -279,8 +304,7 @@ export class Macrome {
       while (queue.size) {
         const change = queue.shift()!;
 
-        const { op, annotated, state, prevState } = change;
-        const { reported } = annotated;
+        const { op, reported, state, prevState } = change;
         const { path } = reported;
         const prevGeneratedPaths = prevState && prevState.generatedPaths;
         const generatedPaths = new Set<string>();

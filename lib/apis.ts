@@ -15,6 +15,7 @@ import type {
 import { relative, dirname } from 'path';
 import { FileHandle, open } from 'fs/promises';
 import { buildOptions } from './utils/fs';
+import { printRelative } from './utils/path';
 
 const _ = Symbol.for('private members');
 
@@ -202,27 +203,31 @@ export class MapChangeApi extends GeneratorApi {
     return this[_].change;
   }
 
+  get version() {
+    return this.change.reported.mtimeMs;
+  }
+
   protected decorateError(error: Error, verb: string): Error {
     const { generatorPath, change } = this[_];
 
     return new ApiError(rawr('macrome {{verb}} failed', { rest: true }), {
       cause: error,
-      info: { verb, generator: generatorPath, change: change.annotated.reported },
+      info: { verb, generator: generatorPath, change: change.reported },
     });
   }
 
   buildAnnotations(destPath: string): Map<string, any> {
-    const relPath = relative(dirname(destPath), this.change.path);
+    const { path } = this.change;
+    const relPath = printRelative(relative(dirname(destPath), path));
 
     return new Map([
       ...super.buildAnnotations(destPath),
-      ['generatedfrom', relPath.startsWith('.') ? relPath : `./${relPath}`],
+      ['generatedfrom', `${relPath}#${this.version}`],
     ]);
   }
 
   async write(path: string, content: string, options: WriteOptions): Promise<void> {
-    const { change } = this[_];
-    const { state } = change;
+    const { state } = this.change;
 
     await super.write(path, content, options);
 

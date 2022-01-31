@@ -49,6 +49,7 @@ export declare class MapChangeApi extends GeneratorApi {
     static fromGeneratorApi(generatorApi: GeneratorApi, change: MappableChange): MapChangeApi;
     constructor(macrome: Macrome, generatorPath: string, change: MappableChange);
     get change(): MappableChange;
+    get version(): number;
     protected decorateError(error: Error, verb: string): Error;
     buildAnnotations(destPath: string): Map<string, any>;
     write(path: string, content: string, options: WriteOptions): Promise<void>;
