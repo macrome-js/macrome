@@ -13,7 +13,7 @@ import type {
   EnqueuedChange,
 } from './types';
 
-import { relative, dirname } from 'path';
+import { relative, dirname, extname } from 'path';
 import { FileHandle, open } from 'fs/promises';
 import { buildOptions } from './utils/fs';
 import { printRelative } from './utils/path';
@@ -125,7 +125,14 @@ export class Api {
       content instanceof Error ? this.buildErrorAnnotations(path) : this.buildAnnotations(path);
 
     const { macrome } = this[_];
-    const accessor = this.accessorFor(path)!;
+    const accessor = this.accessorFor(path);
+
+    if (!accessor) {
+      throw new Errawr(rawr('macrome has no accessor for writing to {ext} files'), {
+        info: { ext: extname(path), path },
+      });
+    }
+
     const file: File = {
       header: {
         annotations,

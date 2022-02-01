@@ -19,7 +19,7 @@ import requireFresh from 'import-fresh';
 import findUp from 'find-up';
 import { map, flat, flatMap, wrap, asyncMap, asyncToArray, execPipe } from 'iter-tools-es';
 import Queue from '@iter-tools/queue';
-import { rawr } from 'errawr';
+import { Errawr, rawr } from 'errawr';
 
 import { WatchmanClient, standaloneQuery } from './watchman';
 import { Api, GeneratorApi, MapChangeApi } from './apis';
@@ -328,8 +328,18 @@ export class Macrome {
               // generator.map()
               const mapResult = generator.map ? await generator.map(api, change) : change;
               mappings.set(path, mapResult);
-            } catch (e: any) {
-              logger.error(rawr('Error mapping {path}')({ path }));
+            } catch (error: any) {
+              logger.error(
+                Errawr.print(
+                  new Errawr(
+                    rawr(`Error mapping {path}`)({
+                      path,
+                      generator: api.generatorPath,
+                    }),
+                    { cause: error },
+                  ),
+                ),
+              );
             } finally {
               api.destroy();
               generatorsToReduce.add(generator);
