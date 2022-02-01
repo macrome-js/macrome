@@ -3,7 +3,7 @@
 
 const parseArgs = require('minimist');
 const camelize = require('camelize');
-const Errawr = require('errawr');
+const { Errawr } = require('errawr');
 
 const { Macrome } = require('../lib/macrome');
 

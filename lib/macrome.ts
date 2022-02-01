@@ -24,13 +24,15 @@ import { rawr } from 'errawr';
 import { WatchmanClient, standaloneQuery } from './watchman';
 import { Api, GeneratorApi, MapChangeApi } from './apis';
 import { matches } from './matchable';
-import { logger } from './utils/logger';
+import { logger as baseLogger } from './utils/logger';
 import { buildOptions, Options, BuiltOptions } from './config';
 
 import accessors from './accessors';
 import { vcsConfigs, VCSConfig } from './vcs-configs';
 import { get } from './utils/map';
 import { openKnownFileForReading } from './utils/fs';
+
+const logger = baseLogger.get('macrome');
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
 const verbsByOp = { A: 'add', D: 'remove', M: 'update' };

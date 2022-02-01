@@ -1,1 +1,2 @@
-export declare const logger: any;
+import logger from 'log';
+export { logger };

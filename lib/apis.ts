@@ -17,9 +17,11 @@ import { relative, dirname } from 'path';
 import { FileHandle, open } from 'fs/promises';
 import { buildOptions } from './utils/fs';
 import { printRelative } from './utils/path';
-import { logger } from './utils/logger';
+import { logger as baseLogger } from './utils/logger';
 
 const _ = Symbol.for('private members');
+
+const logger = baseLogger.get('macrome:api');
 
 export class ApiError extends Errawr {
   get name(): string {

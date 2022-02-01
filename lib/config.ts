@@ -3,7 +3,7 @@ import findUp from 'find-up';
 import requireFresh from 'import-fresh';
 import { map, concat, execPipe } from 'iter-tools-es';
 
-import { logger } from './utils/logger';
+import { logger as baseLogger } from './utils/logger';
 import { groupBy } from './utils/map';
 import { expressionMerger, asArray } from './matchable';
 import { statSync } from 'fs';
@@ -31,6 +31,8 @@ export type BuiltOptions = {
   settleTTL: number;
   generators: Map<string, Array<GeneratorStub>>;
 };
+
+const logger = baseLogger.get('macrome:config');
 
 const alwaysExclude = ['.git', 'node_modules'];
 

@@ -17,7 +17,7 @@ import { recursiveReadFiles } from './utils/fs';
 import { logger as baseLogger } from './utils/logger';
 import { asArray, mergeMatchers } from './matchable';
 
-const logger = baseLogger.get('watchman');
+const logger = baseLogger.get('macrome:watchman');
 
 const makeMatcher = (expr: MMatchExpression) => {
   return expr ? mm.matcher(asArray(expr).join('|')) : undefined;
