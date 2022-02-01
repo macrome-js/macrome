@@ -39,7 +39,8 @@ export function buildOptions(apiOptions: Options = {}): BuiltOptions {
   const configPath =
     apiOptions.configPath === null
       ? null
-      : findUp.sync('macrome.config.js', { cwd: root || process.cwd() }) || null;
+      : findUp.sync(['macrome.config.js', 'macrome.config.cjs'], { cwd: root || process.cwd() }) ||
+        null;
 
   const configOptions: Options = configPath === null ? {} : requireFresh(configPath);
 
