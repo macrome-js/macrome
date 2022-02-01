@@ -10,17 +10,19 @@ import type {
   Annotations,
   AnnotatedAddChange,
   AnnotatedModifyChange,
+  EnqueuedChange,
 } from './types';
 
 import { relative, dirname } from 'path';
 import { FileHandle, open } from 'fs/promises';
 import { buildOptions } from './utils/fs';
 import { printRelative } from './utils/path';
+import { logger } from './utils/logger';
 
 const _ = Symbol.for('private members');
 
 export class ApiError extends Errawr {
-  get name() {
+  get name(): string {
     return 'ApiError';
   }
 }
@@ -28,6 +30,16 @@ export class ApiError extends Errawr {
 type ApiProtected = {
   destroyed: boolean;
   macrome: Macrome;
+};
+
+const asError = (e: any) => {
+  if (e instanceof Error) return e;
+  else {
+    const error = new Error(e);
+    // We don't know where this came from, but it wasn't really here
+    error.stack = undefined;
+    return error;
+  }
 };
 
 /**
@@ -46,11 +58,11 @@ export class Api {
     }
   }
 
-  get macrome() {
+  get macrome(): Macrome {
     return this[_].macrome;
   }
 
-  get destroyed() {
+  get destroyed(): boolean {
     return this[_].destroyed;
   }
 
@@ -64,6 +76,17 @@ export class Api {
 
   buildAnnotations(_destPath?: string): Map<string, any> {
     return new Map<string, any>([['macrome', true]]);
+  }
+
+  buildErrorAnnotations(_destPath?: string): Map<string, any> {
+    return new Map<string, any>([
+      ['macrome', true],
+      ['generatefailed', true],
+    ]);
+  }
+
+  buildErrorContent(error: Error): string {
+    return `throw new Error(${JSON.stringify(error.stack || error)});`;
   }
 
   resolve(path: string): string {
@@ -93,16 +116,19 @@ export class Api {
     }
   }
 
-  async write(path: string, content: string, options: WriteOptions): Promise<void> {
+  async write(path: string, content: string | Error, options: WriteOptions = {}): Promise<void> {
     this.__assertNotDestroyed('write');
+
+    const annotations =
+      content instanceof Error ? this.buildErrorAnnotations(path) : this.buildAnnotations(path);
 
     const { macrome } = this[_];
     const accessor = this.accessorFor(path)!;
     const file: File = {
       header: {
-        annotations: this.buildAnnotations(path),
+        annotations,
       },
-      content,
+      content: content instanceof Error ? this.buildErrorContent(content) : content,
     };
     const before = Date.now();
 
@@ -149,6 +175,17 @@ export class Api {
       throw this.decorateError(e, 'write');
     }
   }
+
+  async generate(path: string, cb: (path: string) => Promise<string>): Promise<void> {
+    let content;
+    try {
+      content = await cb(path);
+    } catch (e: any) {
+      logger.warn(`Failed generating {path: ${path}}`);
+      content = asError(e);
+    }
+    await this.write(path, content);
+  }
 }
 
 type GeneratorApiProtected = ApiProtected & {
@@ -168,7 +205,7 @@ export class GeneratorApi extends Api {
     this[_].generatorPath = generatorPath;
   }
 
-  get generatorPath() {
+  get generatorPath(): string {
     return this[_].generatorPath;
   }
 
@@ -177,6 +214,15 @@ export class GeneratorApi extends Api {
 
     return new Map<string, any>([
       ...super.buildAnnotations(),
+      ['generatedby', `/${generatorPath}`],
+    ]);
+  }
+
+  buildErrorAnnotations(_destPath?: string): Map<string, any> {
+    const { generatorPath } = this[_];
+
+    return new Map<string, any>([
+      ...super.buildErrorAnnotations(),
       ['generatedby', `/${generatorPath}`],
     ]);
   }
@@ -199,12 +245,12 @@ export class MapChangeApi extends GeneratorApi {
     this[_].change = change;
   }
 
-  get change() {
+  get change(): EnqueuedChange {
     return this[_].change;
   }
 
-  get version() {
-    return this.change.reported.mtimeMs;
+  get version(): string {
+    return String(this.change.reported.mtimeMs);
   }
 
   protected decorateError(error: Error, verb: string): Error {
@@ -226,11 +272,21 @@ export class MapChangeApi extends GeneratorApi {
     ]);
   }
 
+  buildErrorAnnotations(destPath: string): Map<string, any> {
+    const { path } = this.change;
+    const relPath = printRelative(relative(dirname(destPath), path));
+
+    return new Map([
+      ...super.buildErrorAnnotations(destPath),
+      ['generatedfrom', `${relPath}#${this.version}`],
+    ]);
+  }
+
   async write(path: string, content: string, options: WriteOptions): Promise<void> {
     const { state } = this.change;
 
     await super.write(path, content, options);
 
-    state.generatedPaths.add(path);
+    if (state) state.generatedPaths.add(path);
   }
 }

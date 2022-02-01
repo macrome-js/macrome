@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { Errawr } from 'errawr';
 import type { Macrome } from './macrome';
-import type { WriteOptions, ReadOptions, Accessor, MappableChange, Annotations } from './types';
+import type { WriteOptions, ReadOptions, Accessor, MappableChange, Annotations, EnqueuedChange } from './types';
 import { FileHandle } from 'fs/promises';
 declare const _: unique symbol;
 export declare class ApiError extends Errawr {
@@ -23,13 +23,16 @@ export declare class Api {
     destroy(): void;
     protected decorateError(error: Error, verb: string): Error;
     buildAnnotations(_destPath?: string): Map<string, any>;
+    buildErrorAnnotations(_destPath?: string): Map<string, any>;
+    buildErrorContent(error: Error): string;
     resolve(path: string): string;
     accessorFor(path: string): Accessor | null;
     getAnnotations(path: string, options?: {
         fd?: FileHandle;
     }): Promise<Annotations | null>;
     read(path: string, options: ReadOptions): Promise<string>;
-    write(path: string, content: string, options: WriteOptions): Promise<void>;
+    write(path: string, content: string | Error, options?: WriteOptions): Promise<void>;
+    generate(path: string, cb: (path: string) => Promise<string>): Promise<void>;
 }
 declare type GeneratorApiProtected = ApiProtected & {
     generatorPath: string;
@@ -40,6 +43,7 @@ export declare class GeneratorApi extends Api {
     constructor(macrome: Macrome, generatorPath: string);
     get generatorPath(): string;
     buildAnnotations(_destPath?: string): Map<string, any>;
+    buildErrorAnnotations(_destPath?: string): Map<string, any>;
 }
 declare type MapChangeApiProtected = GeneratorApiProtected & {
     change: MappableChange;
@@ -48,10 +52,11 @@ export declare class MapChangeApi extends GeneratorApi {
     protected [_]: MapChangeApiProtected;
     static fromGeneratorApi(generatorApi: GeneratorApi, change: MappableChange): MapChangeApi;
     constructor(macrome: Macrome, generatorPath: string, change: MappableChange);
-    get change(): MappableChange;
-    get version(): number;
+    get change(): EnqueuedChange;
+    get version(): string;
     protected decorateError(error: Error, verb: string): Error;
     buildAnnotations(destPath: string): Map<string, any>;
+    buildErrorAnnotations(destPath: string): Map<string, any>;
     write(path: string, content: string, options: WriteOptions): Promise<void>;
 }
 export {};

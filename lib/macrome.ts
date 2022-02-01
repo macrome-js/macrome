@@ -19,6 +19,7 @@ import requireFresh from 'import-fresh';
 import findUp from 'find-up';
 import { map, flat, flatMap, wrap, asyncMap, asyncToArray, execPipe } from 'iter-tools-es';
 import Queue from '@iter-tools/queue';
+import { rawr } from 'errawr';
 
 import { WatchmanClient, standaloneQuery } from './watchman';
 import { Api, GeneratorApi, MapChangeApi } from './apis';
@@ -304,7 +305,7 @@ export class Macrome {
       while (queue.size) {
         const change = queue.shift()!;
 
-        const { op, reported, state, prevState } = change;
+        const { reported, state, prevState } = change;
         const { path } = reported;
         const prevGeneratedPaths = prevState && prevState.generatedPaths;
         const generatedPaths = new Set<string>();
@@ -316,18 +317,21 @@ export class Macrome {
             (reported.op !== 'D' ? ` modified at ${reported.mtimeMs}` : ''),
         );
 
-        if (op !== 'D') {
+        if (change.op !== 'D') {
           await this.__forMatchingGenerators(path, async (generator, { mappings, api: genApi }) => {
             // Changes made through this api feed back into the queue
             const api = MapChangeApi.fromGeneratorApi(genApi, change);
 
-            // generator.map()
-            const mapResult = generator.map ? await generator.map(api, change) : change;
-
-            api.destroy();
-
-            mappings.set(path, mapResult);
-            generatorsToReduce.add(generator);
+            try {
+              // generator.map()
+              const mapResult = generator.map ? await generator.map(api, change) : change;
+              mappings.set(path, mapResult);
+            } catch (e: any) {
+              logger.error(rawr('Error mapping {path}')({ path }));
+            } finally {
+              api.destroy();
+              generatorsToReduce.add(generator);
+            }
           });
         } else {
           await this.__forMatchingGenerators(path, async (generator, { mappings }) => {
