@@ -1,4 +1,4 @@
-import { dirname, resolve } from 'path';
+import { join, dirname, resolve } from 'path';
 import findUp from 'find-up';
 import requireFresh from 'import-fresh';
 import { map, concat, execPipe } from 'iter-tools-es';
@@ -6,6 +6,7 @@ import { map, concat, execPipe } from 'iter-tools-es';
 import { logger } from './utils/logger';
 import { groupBy } from './utils/map';
 import { expressionMerger, asArray } from './matchable';
+import { statSync } from 'fs';
 
 export type Options = {
   quiet?: boolean;
@@ -32,6 +33,22 @@ export type BuiltOptions = {
 };
 
 const alwaysExclude = ['.git', 'node_modules'];
+
+const stat = (path: string) => statSync(path, { throwIfNoEntry: false });
+
+const getRequirePath = (base: string): string => {
+  const root = stat(base);
+
+  if (root && root.isDirectory()) {
+    const pkg = join(base, 'package.json');
+    if (stat(pkg)) return pkg;
+
+    const indexCjs = join(base, 'index.cjs');
+    if (stat(indexCjs)) return indexCjs;
+  }
+
+  return base;
+};
 
 export function buildOptions(apiOptions: Options = {}): BuiltOptions {
   let root: string | null = apiOptions.root ? resolve(apiOptions.root) : null;
@@ -62,7 +79,10 @@ export function buildOptions(apiOptions: Options = {}): BuiltOptions {
     map((path): [string, Record<string, any>] => (Array.isArray(path) ? path : [path, {}])),
     map(([path, options]) => {
       const _options = { ...options, logger };
-      const resolvedPath = require.resolve(path, { paths: [root_] });
+
+      const resolvedPath = require.resolve(getRequirePath(resolve(root_, path)), {
+        paths: [root_],
+      });
 
       return { options: _options, path, resolvedPath };
     }),
