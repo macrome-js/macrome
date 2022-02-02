@@ -1,8 +1,8 @@
 /// <reference types="node" />
-import { Errawr } from 'errawr';
 import type { Macrome } from './macrome';
 import type { WriteOptions, ReadOptions, Accessor, MappableChange, Annotations, EnqueuedChange } from './types';
 import { FileHandle } from 'fs/promises';
+import { Errawr } from 'errawr';
 declare const _: unique symbol;
 export declare class ApiError extends Errawr {
     get name(): string;

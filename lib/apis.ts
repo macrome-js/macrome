@@ -1,5 +1,3 @@
-import { Errawr, rawr } from 'errawr';
-
 import type { Macrome } from './macrome';
 import type {
   WriteOptions,
@@ -14,7 +12,8 @@ import type {
 } from './types';
 
 import { relative, dirname, extname } from 'path';
-import { FileHandle, open } from 'fs/promises';
+import { FileHandle, mkdir, open } from 'fs/promises';
+import { Errawr, rawr } from 'errawr';
 import { buildOptions } from './utils/fs';
 import { printRelative } from './utils/path';
 import { logger as baseLogger } from './utils/logger';
@@ -132,6 +131,8 @@ export class Api {
         info: { ext: extname(path), path },
       });
     }
+
+    await mkdir(dirname(path), { recursive: true });
 
     const file: File = {
       header: {
