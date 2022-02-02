@@ -87,7 +87,9 @@ export class Api {
   }
 
   buildErrorContent(error: Error): string {
-    return `throw new Error(${JSON.stringify(error.stack || error)});`;
+    const stack = error.stack || String(error);
+    const escaped = stack.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
+    return `throw new Error(\`${escaped}\`);`;
   }
 
   resolve(path: string): string {
