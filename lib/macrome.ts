@@ -371,7 +371,20 @@ export class Macrome {
         if (generatorsToReduce.has(generator)) {
           const { mappings, api } = generatorsMeta.get(generator)!;
 
-          await generator.reduce?.(api, mappings);
+          try {
+            await generator.reduce?.(api, mappings);
+          } catch (error) {
+            logger.error(
+              Errawr.print(
+                new Errawr(
+                  rawr(`Error reducing {generator}`)({
+                    generator: api.generatorPath,
+                  }),
+                  { cause: error },
+                ),
+              ),
+            );
+          }
         }
       }
 
