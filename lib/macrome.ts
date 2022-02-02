@@ -222,20 +222,12 @@ export class Macrome {
       if (!state) return;
     } else {
       if (state?.mtimeMs === reported.mtimeMs) {
-        // This is an "echo" change: the watcher is re-reporting it but it was already enqueued.
+        // This is an "echo" change: the watcher is reporting it but it was already enqueued synchronously
         return;
       } else {
-        if (annotations) {
-          if (annotations.has('generatefailed')) {
-            return;
-          } else if (state?.annotations) {
-            const generatedFrom = annotations.get('generatedfrom');
-            if (generatedFrom && state.annotations.get('generatedFrom') === generatedFrom) {
-              // The version we have is already genereated from the same source (./path#version)
-              // TODO parsed generatedFrom to be sure it includes a version
-              return;
-            }
-          }
+        if (annotations?.has('generatefailed')) {
+          // Failure files are just placeholders, don't treat them as real inputs
+          return;
         }
       }
     }
@@ -260,7 +252,7 @@ export class Macrome {
       const { mtimeMs } = reported;
       const generatedPaths = prevState ? prevState.generatedPaths : new Set<string>();
 
-      const state = { path, mtimeMs, annotations, generatedPaths };
+      const state = { mtimeMs, annotations, generatedPaths };
 
       this.state.set(path, state);
 
@@ -416,6 +408,7 @@ export class Macrome {
       // remove @generated state which were not generated
       if (change.op !== 'D' && change.annotations) {
         if (!this.state.has(reported.path)) {
+          logger.warn(`Unlinking stale built file {path: ${reported.path}}`);
           await unlink(this.resolve(reported.path));
         }
       }

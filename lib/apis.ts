@@ -11,7 +11,7 @@ import type {
   EnqueuedChange,
 } from './types';
 
-import { relative, dirname, extname } from 'path';
+import { relative, resolve, dirname, extname } from 'path';
 import { FileHandle, mkdir, open } from 'fs/promises';
 import { Errawr, rawr } from 'errawr';
 import { buildOptions } from './utils/fs';
@@ -302,5 +302,45 @@ export class MapChangeApi extends GeneratorApi {
     await super.write(path, content, options);
 
     if (state) state.generatedPaths.add(path);
+  }
+
+  async generate(path: string, cb: (path: string) => Promise<string>): Promise<void> {
+    const { macrome, change } = this;
+    let handle;
+    try {
+      handle = await open(path, 'r');
+      const stats = await handle.stat();
+      const targetMtime = Math.floor(stats.mtimeMs);
+      const targetAnnotations = await this.getAnnotations(path, { fd: handle });
+
+      const targetGeneratedFrom = targetAnnotations?.get('generatedfrom');
+
+      if (targetGeneratedFrom) {
+        const [fromPath, version] = targetGeneratedFrom.split('#');
+        if (
+          this.resolve(change.path) === resolve(dirname(this.resolve(path)), fromPath) &&
+          String(change.reported.mtimeMs) === version
+        ) {
+          // The target is already generated from this version of this source
+
+          if (change.op === 'A') {
+            // Since we are not generating the target, make sure its info is loaded
+            macrome.state.set(path, {
+              mtimeMs: targetMtime,
+              annotations: targetAnnotations,
+              generatedPaths: new Set(),
+            });
+          }
+
+          return;
+        }
+      }
+    } catch (e: any) {
+      if (e.code !== 'ENOENT') throw e;
+    } finally {
+      handle?.close();
+    }
+
+    return super.generate(path, cb);
   }
 }
