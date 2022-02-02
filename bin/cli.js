@@ -6,6 +6,9 @@ const camelize = require('camelize');
 const { Errawr } = require('errawr');
 
 const { Macrome } = require('../lib/macrome');
+const { logger: baseLogger } = require('../lib/utils/logger');
+
+const logger = baseLogger.get('macrome');
 
 const argv = camelize(
   parseArgs(process.argv.slice(2), {
@@ -17,7 +20,7 @@ const argv = camelize(
 );
 
 process.on('unhandledRejection', (error) => {
-  console.error(Errawr.print(error));
+  logger.error(`Unhandled rejection: ${Errawr.print(error)}`);
   process.exit(1);
 });
 
@@ -34,7 +37,7 @@ function runCommand(macrome, command, argv) {
         const clean = macrome.check();
 
         if (!clean && !argv.quiet) {
-          console.error(
+          logger.warn(
             'Building the project resulted in file changes.\n' +
               'This probably means that the `npx macrome build` command was not run.',
           );
@@ -46,7 +49,7 @@ function runCommand(macrome, command, argv) {
         process.exit(2);
     }
   } catch (e) {
-    Errawr.print(e);
+    logger.error(Errawr.print(e));
   }
 }
 
