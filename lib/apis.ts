@@ -187,14 +187,16 @@ export class Api {
   }
 
   async generate(path: string, cb: (path: string) => Promise<string>): Promise<void> {
-    let content;
+    let content = null;
     try {
       content = await cb(path);
     } catch (e: any) {
       logger.warn(`Failed generating {path: ${path}}`);
       content = asError(e);
     }
-    await this.write(path, content);
+    if (content != null) {
+      await this.write(path, content);
+    }
   }
 }
 
