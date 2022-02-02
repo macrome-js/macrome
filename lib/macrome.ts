@@ -225,11 +225,17 @@ export class Macrome {
         // This is an "echo" change: the watcher is re-reporting it but it was already enqueued.
         return;
       } else {
-        const generatedFrom = annotations?.get('generatedfrom');
-        if (generatedFrom && state?.annotations?.get('generatedFrom') === generatedFrom) {
-          // The version we have is already genereated from the same source (./path#version)
-          // TODO parsed generatedFrom to be sure it includes a version
-          return;
+        if (annotations) {
+          if (annotations.has('generatefailed')) {
+            return;
+          } else if (state?.annotations) {
+            const generatedFrom = annotations.get('generatedfrom');
+            if (generatedFrom && state.annotations.get('generatedFrom') === generatedFrom) {
+              // The version we have is already genereated from the same source (./path#version)
+              // TODO parsed generatedFrom to be sure it includes a version
+              return;
+            }
+          }
         }
       }
     }
