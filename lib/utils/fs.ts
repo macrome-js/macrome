@@ -38,7 +38,7 @@ export async function* recursiveReadFiles(
       const isDir = ent.isDirectory();
       const isFile = ent.isFile();
 
-      if ((!isDir && !isFile) || shouldExclude(path)) {
+      if ((!isDir && !isFile) || shouldExclude(isDir ? `${path}/` : path)) {
         continue;
       }
 

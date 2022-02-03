@@ -5,22 +5,37 @@ import type {
   WatchmanExpression,
 } from './types';
 
-import { relative, join, extname } from 'path';
+import { relative, join, dirname, extname } from 'path';
+import findUp from 'find-up';
 import { Errawr, invariant } from 'errawr';
 import { Client as BaseWatchmanClient } from 'fb-watchman';
 import * as mm from 'micromatch';
 import { when, map, asyncFlatMap, asyncToArray, execPipe } from 'iter-tools-es';
 
-import { stat } from 'fs/promises';
+import { readFile, stat } from 'fs/promises';
 import { recursiveReadFiles } from './utils/fs';
 
 import { logger as baseLogger } from './utils/logger';
-import { asArray, mergeMatchers } from './matchable';
+import { asArray, mergeMatchers, mergeExcludeMatchers } from './matchable';
 
 const logger = baseLogger.get('macrome:watchman');
 
 const makeMatcher = (expr: MMatchExpression) => {
-  return expr ? mm.matcher(asArray(expr).join('|')) : undefined;
+  return expr ? mm.matcher(`(${asArray(expr).join('|')})`) : undefined;
+};
+
+const makeExcludeMatcher = (expr: MMatchExpression) => {
+  // allow patterns with no trailing slash to exclude directories
+  // patterns with trailing / still cannot exclude files though
+  return expr
+    ? mm.matcher(
+        '(' +
+          asArray(expr)
+            .map((expr) => (expr.endsWith('/') ? expr : `${expr}?(\\/)`))
+            .join('|') +
+          ')',
+      )
+    : undefined;
 };
 
 const compoundExpr = (name: string, ...terms: Array<unknown>) => {
@@ -63,6 +78,7 @@ export class WatchmanSubscription {
 
   constructor(
     expression: AsymmetricMMatchExpressionWithSuffixes | null,
+    // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
     subscription: any,
     onEvent: OnEvent,
   ) {
@@ -241,6 +257,22 @@ export class WatchmanClient extends BaseWatchmanClient {
   }
 }
 
+const getWatchmanIgnoreDirs = async (root: string): Promise<Set<string> | undefined> => {
+  const watchmanConfigPath = await findUp('.watchmanconfig', { cwd: root });
+
+  if (!watchmanConfigPath) return;
+
+  const watchmanConfig = JSON.parse(await readFile(watchmanConfigPath, 'utf-8'));
+  const ignoreDirs = watchmanConfig.ignore_dirs;
+  const rootRelative = relative(dirname(watchmanConfigPath), root);
+
+  if (!ignoreDirs || !ignoreDirs.length) return;
+
+  return new Set(
+    ignoreDirs.map((path: string) => join(rootRelative, path.endsWith('/') ? path : `${path}/`)),
+  );
+};
+
 // Mimic behavior of watchman's initial build so that `macrome build` does not rely on the watchman service
 export async function standaloneQuery(
   root: string,
@@ -248,11 +280,16 @@ export async function standaloneQuery(
 ): Promise<Array<ReportedChange>> {
   const { include, exclude, suffixes } = expression || {};
   const suffixSet = new Set(suffixes);
+
+  const watchmanIgnoreDirs = await getWatchmanIgnoreDirs(root);
+  const watchmanIgnoreMatcher =
+    watchmanIgnoreDirs && ((path: string) => watchmanIgnoreDirs.has(path));
+
   const shouldInclude = mergeMatchers(
     (path) => suffixSet.has(extname(path).slice(1)),
     makeMatcher(include),
   );
-  const shouldExclude = makeMatcher(exclude);
+  const shouldExclude = mergeExcludeMatchers(watchmanIgnoreMatcher, makeExcludeMatcher(exclude));
 
   return await execPipe(
     recursiveReadFiles(root, { shouldInclude, shouldExclude }),

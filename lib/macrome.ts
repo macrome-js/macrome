@@ -408,7 +408,7 @@ export class Macrome {
       // remove @generated state which were not generated
       if (change.op !== 'D' && change.annotations) {
         if (!this.state.has(reported.path)) {
-          logger.warn(`Unlinking stale built file {path: ${reported.path}}`);
+          logger.warn(`Removing stale generated file {path: ${reported.path}}`);
           await unlink(this.resolve(reported.path));
         }
       }

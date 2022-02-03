@@ -34,7 +34,7 @@ export type BuiltOptions = {
 
 const logger = baseLogger.get('macrome:config');
 
-const alwaysExclude = ['.git', 'node_modules'];
+const alwaysExclude = ['.git/', 'node_modules/'];
 
 const stat = (path: string) => statSync(path, { throwIfNoEntry: false });
 
