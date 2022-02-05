@@ -55,9 +55,9 @@ Macrome can also be imported and used in scripts (though CLI usage is preferred)
 const { Macrome } = require('macrome');
 
 const macrome = new Macrome(configOptions); // same as cli options, but camel case
-macrome.clean();
-macrome.build();
-macrome.watch();
+await macrome.clean();
+await macrome.build();
+await macrome.watch();
 ```
 
 ## Generators
