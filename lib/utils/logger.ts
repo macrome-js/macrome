@@ -1,8 +1,8 @@
 // @ts-ignore
-import baseLogger from 'log';
+import logger from 'log';
 // @ts-ignore
 import initNodeLogWriter from 'log-node';
 
 initNodeLogWriter();
 
-export const logger = baseLogger.get('macrome');
+export { logger };

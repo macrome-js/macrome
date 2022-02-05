@@ -19,17 +19,20 @@ import requireFresh from 'import-fresh';
 import findUp from 'find-up';
 import { map, flat, flatMap, wrap, asyncMap, asyncToArray, execPipe } from 'iter-tools-es';
 import Queue from '@iter-tools/queue';
+import { Errawr, rawr } from 'errawr';
 
 import { WatchmanClient, standaloneQuery } from './watchman';
 import { Api, GeneratorApi, MapChangeApi } from './apis';
 import { matches } from './matchable';
-import { logger } from './utils/logger';
+import { logger as baseLogger } from './utils/logger';
 import { buildOptions, Options, BuiltOptions } from './config';
 
 import accessors from './accessors';
 import { vcsConfigs, VCSConfig } from './vcs-configs';
 import { get } from './utils/map';
 import { openKnownFileForReading } from './utils/fs';
+
+const logger = baseLogger.get('macrome');
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
 const verbsByOp = { A: 'add', D: 'remove', M: 'update' };
@@ -219,13 +222,11 @@ export class Macrome {
       if (!state) return;
     } else {
       if (state?.mtimeMs === reported.mtimeMs) {
-        // This is an "echo" change: the watcher is re-reporting it but it was already enqueued.
+        // This is an "echo" change: the watcher is reporting it but it was already enqueued synchronously
         return;
       } else {
-        const generatedFrom = annotations?.get('generatedfrom');
-        if (generatedFrom && state?.annotations?.get('generatedFrom') === generatedFrom) {
-          // The version we have is already genereated from the same source (./path#version)
-          // TODO parsed generatedFrom to be sure it includes a version
+        if (annotations?.has('generatefailed')) {
+          // Failure files are just placeholders, don't treat them as real inputs
           return;
         }
       }
@@ -251,7 +252,7 @@ export class Macrome {
       const { mtimeMs } = reported;
       const generatedPaths = prevState ? prevState.generatedPaths : new Set<string>();
 
-      const state = { path, mtimeMs, annotations, generatedPaths };
+      const state = { mtimeMs, annotations, generatedPaths };
 
       this.state.set(path, state);
 
@@ -304,7 +305,7 @@ export class Macrome {
       while (queue.size) {
         const change = queue.shift()!;
 
-        const { op, reported, state, prevState } = change;
+        const { reported, state, prevState } = change;
         const { path } = reported;
         const prevGeneratedPaths = prevState && prevState.generatedPaths;
         const generatedPaths = new Set<string>();
@@ -316,18 +317,31 @@ export class Macrome {
             (reported.op !== 'D' ? ` modified at ${reported.mtimeMs}` : ''),
         );
 
-        if (op !== 'D') {
+        if (change.op !== 'D') {
           await this.__forMatchingGenerators(path, async (generator, { mappings, api: genApi }) => {
             // Changes made through this api feed back into the queue
             const api = MapChangeApi.fromGeneratorApi(genApi, change);
 
-            // generator.map()
-            const mapResult = generator.map ? await generator.map(api, change) : change;
-
-            api.destroy();
-
-            mappings.set(path, mapResult);
-            generatorsToReduce.add(generator);
+            try {
+              // generator.map()
+              const mapResult = generator.map ? await generator.map(api, change) : change;
+              mappings.set(path, mapResult);
+            } catch (error: any) {
+              logger.error(
+                Errawr.print(
+                  new Errawr(
+                    rawr(`Error mapping {path}`)({
+                      path,
+                      generator: api.generatorPath,
+                    }),
+                    { cause: error },
+                  ),
+                ),
+              );
+            } finally {
+              api.destroy();
+              generatorsToReduce.add(generator);
+            }
           });
         } else {
           await this.__forMatchingGenerators(path, async (generator, { mappings }) => {
@@ -355,7 +369,20 @@ export class Macrome {
         if (generatorsToReduce.has(generator)) {
           const { mappings, api } = generatorsMeta.get(generator)!;
 
-          await generator.reduce?.(api, mappings);
+          try {
+            await generator.reduce?.(api, mappings);
+          } catch (error) {
+            logger.error(
+              Errawr.print(
+                new Errawr(
+                  rawr(`Error reducing {generator}`)({
+                    generator: api.generatorPath,
+                  }),
+                  { cause: error },
+                ),
+              ),
+            );
+          }
         }
       }
 
@@ -381,6 +408,7 @@ export class Macrome {
       // remove @generated state which were not generated
       if (change.op !== 'D' && change.annotations) {
         if (!this.state.has(reported.path)) {
+          logger.warn(`Removing stale generated file {path: ${reported.path}}`);
           await unlink(this.resolve(reported.path));
         }
       }

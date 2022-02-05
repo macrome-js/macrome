@@ -1,5 +1,3 @@
-import { Errawr, rawr } from 'errawr';
-
 import type { Macrome } from './macrome';
 import type {
   WriteOptions,
@@ -10,17 +8,22 @@ import type {
   Annotations,
   AnnotatedAddChange,
   AnnotatedModifyChange,
+  EnqueuedChange,
 } from './types';
 
-import { relative, dirname } from 'path';
-import { FileHandle, open } from 'fs/promises';
+import { relative, resolve, dirname, extname } from 'path';
+import { FileHandle, mkdir, open } from 'fs/promises';
+import { Errawr, rawr } from 'errawr';
 import { buildOptions } from './utils/fs';
 import { printRelative } from './utils/path';
+import { logger as baseLogger } from './utils/logger';
 
 const _ = Symbol.for('private members');
 
+const logger = baseLogger.get('macrome:api');
+
 export class ApiError extends Errawr {
-  get name() {
+  get name(): string {
     return 'ApiError';
   }
 }
@@ -28,6 +31,16 @@ export class ApiError extends Errawr {
 type ApiProtected = {
   destroyed: boolean;
   macrome: Macrome;
+};
+
+const asError = (e: any) => {
+  if (e instanceof Error) return e;
+  else {
+    const error = new Error(e);
+    // We don't know where this came from, but it wasn't really here
+    error.stack = undefined;
+    return error;
+  }
 };
 
 /**
@@ -46,11 +59,11 @@ export class Api {
     }
   }
 
-  get macrome() {
+  get macrome(): Macrome {
     return this[_].macrome;
   }
 
-  get destroyed() {
+  get destroyed(): boolean {
     return this[_].destroyed;
   }
 
@@ -64,6 +77,19 @@ export class Api {
 
   buildAnnotations(_destPath?: string): Map<string, any> {
     return new Map<string, any>([['macrome', true]]);
+  }
+
+  buildErrorAnnotations(_destPath?: string): Map<string, any> {
+    return new Map<string, any>([
+      ['macrome', true],
+      ['generatefailed', true],
+    ]);
+  }
+
+  buildErrorContent(error: Error): string {
+    const stack = error.stack || String(error);
+    const escaped = stack.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
+    return `throw new Error(\`${escaped}\`);`;
   }
 
   resolve(path: string): string {
@@ -93,16 +119,28 @@ export class Api {
     }
   }
 
-  async write(path: string, content: string, options: WriteOptions): Promise<void> {
+  async write(path: string, content: string | Error, options: WriteOptions = {}): Promise<void> {
     this.__assertNotDestroyed('write');
 
+    const annotations =
+      content instanceof Error ? this.buildErrorAnnotations(path) : this.buildAnnotations(path);
+
     const { macrome } = this[_];
-    const accessor = this.accessorFor(path)!;
+    const accessor = this.accessorFor(path);
+
+    if (!accessor) {
+      throw new Errawr(rawr('macrome has no accessor for writing to {ext} files'), {
+        info: { ext: extname(path), path },
+      });
+    }
+
+    await mkdir(dirname(path), { recursive: true });
+
     const file: File = {
       header: {
-        annotations: this.buildAnnotations(path),
+        annotations,
       },
-      content,
+      content: content instanceof Error ? this.buildErrorContent(content) : content,
     };
     const before = Date.now();
 
@@ -149,6 +187,19 @@ export class Api {
       throw this.decorateError(e, 'write');
     }
   }
+
+  async generate(path: string, cb: (path: string) => Promise<string>): Promise<void> {
+    let content = null;
+    try {
+      content = await cb(path);
+    } catch (e: any) {
+      logger.warn(`Failed generating {path: ${path}}`);
+      content = asError(e);
+    }
+    if (content != null) {
+      await this.write(path, content);
+    }
+  }
 }
 
 type GeneratorApiProtected = ApiProtected & {
@@ -168,7 +219,7 @@ export class GeneratorApi extends Api {
     this[_].generatorPath = generatorPath;
   }
 
-  get generatorPath() {
+  get generatorPath(): string {
     return this[_].generatorPath;
   }
 
@@ -177,6 +228,15 @@ export class GeneratorApi extends Api {
 
     return new Map<string, any>([
       ...super.buildAnnotations(),
+      ['generatedby', `/${generatorPath}`],
+    ]);
+  }
+
+  buildErrorAnnotations(_destPath?: string): Map<string, any> {
+    const { generatorPath } = this[_];
+
+    return new Map<string, any>([
+      ...super.buildErrorAnnotations(),
       ['generatedby', `/${generatorPath}`],
     ]);
   }
@@ -199,12 +259,12 @@ export class MapChangeApi extends GeneratorApi {
     this[_].change = change;
   }
 
-  get change() {
+  get change(): EnqueuedChange {
     return this[_].change;
   }
 
-  get version() {
-    return this.change.reported.mtimeMs;
+  get version(): string {
+    return String(this.change.reported.mtimeMs);
   }
 
   protected decorateError(error: Error, verb: string): Error {
@@ -226,11 +286,61 @@ export class MapChangeApi extends GeneratorApi {
     ]);
   }
 
+  buildErrorAnnotations(destPath: string): Map<string, any> {
+    const { path } = this.change;
+    const relPath = printRelative(relative(dirname(destPath), path));
+
+    return new Map([
+      ...super.buildErrorAnnotations(destPath),
+      ['generatedfrom', `${relPath}#${this.version}`],
+    ]);
+  }
+
   async write(path: string, content: string, options: WriteOptions): Promise<void> {
     const { state } = this.change;
 
     await super.write(path, content, options);
 
-    state.generatedPaths.add(path);
+    if (state) state.generatedPaths.add(path);
+  }
+
+  async generate(path: string, cb: (path: string) => Promise<string>): Promise<void> {
+    const { macrome, change } = this;
+    let handle;
+    try {
+      handle = await open(path, 'r');
+      const stats = await handle.stat();
+      const targetMtime = Math.floor(stats.mtimeMs);
+      const targetAnnotations = await this.getAnnotations(path, { fd: handle });
+
+      const targetGeneratedFrom = targetAnnotations?.get('generatedfrom');
+
+      if (targetGeneratedFrom) {
+        const [fromPath, version] = targetGeneratedFrom.split('#');
+        if (
+          this.resolve(change.path) === resolve(dirname(this.resolve(path)), fromPath) &&
+          String(change.reported.mtimeMs) === version
+        ) {
+          // The target is already generated from this version of this source
+
+          if (change.op === 'A') {
+            // Since we are not generating the target, make sure its info is loaded
+            macrome.state.set(path, {
+              mtimeMs: targetMtime,
+              annotations: targetAnnotations,
+              generatedPaths: new Set(),
+            });
+          }
+
+          return;
+        }
+      }
+    } catch (e: any) {
+      if (e.code !== 'ENOENT') throw e;
+    } finally {
+      handle?.close();
+    }
+
+    return super.generate(path, cb);
   }
 }

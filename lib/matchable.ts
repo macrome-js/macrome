@@ -35,6 +35,13 @@ export const mergeMatchers = (
   return a && b ? (path: string) => a(path) && b(path) : a || b;
 };
 
+export const mergeExcludeMatchers = (
+  a: Matcher | undefined,
+  b: Matcher | undefined,
+): Matcher | undefined => {
+  return a && b ? (path: string) => a(path) || b(path) : a || b;
+};
+
 export function expressionMerger(
   exprA: MMatchExpression,
   exprB: MMatchExpression,
