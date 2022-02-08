@@ -13,7 +13,8 @@ import type {
 
 import { relative, resolve, dirname, extname } from 'path';
 import { FileHandle, mkdir, open } from 'fs/promises';
-import { Errawr, rawr } from 'errawr';
+import { Errawr, invariant, rawr } from 'errawr';
+import { objectValues } from 'iter-tools-es';
 import { buildOptions } from './utils/fs';
 import { printRelative } from './utils/path';
 import { logger as baseLogger } from './utils/logger';
@@ -21,6 +22,8 @@ import { logger as baseLogger } from './utils/logger';
 const _ = Symbol.for('private members');
 
 const logger = baseLogger.get('macrome:api');
+
+type PromiseDict = { [key: string]: Promise<any> };
 
 export class ApiError extends Errawr {
   get name(): string {
@@ -188,10 +191,37 @@ export class Api {
     }
   }
 
-  async generate(path: string, cb: (path: string) => Promise<string>): Promise<void> {
+  async generate(
+    path: string,
+    cb: (path: string, deps: Record<string, never>) => Promise<string>,
+  ): Promise<void>;
+  async generate<D extends PromiseDict>(
+    path: string,
+    deps: D,
+    cb: (path: string, resolvedDeps: D) => Promise<string>,
+  ): Promise<void>;
+  async generate(path: string, ...args: Array<any>): Promise<void> {
+    let deps: PromiseDict = {};
+    let cb: <D>(path: string, resolvedDeps: D) => Promise<string>;
+    if (args.length <= 1) {
+      cb = args[0];
+    } else {
+      deps = args[0];
+      cb = args[1];
+    }
+
+    for (const dep of objectValues(deps)) {
+      invariant(
+        dep instanceof Promise,
+        'deps argument to api.generate must be {[key]: string => Promise}',
+      );
+    }
+
     let content = null;
     try {
-      content = await cb(path);
+      await Promise.all(objectValues(deps));
+
+      content = await cb(path, deps);
     } catch (e: any) {
       logger.warn(`Failed generating {path: ${path}}`);
       content = asError(e);
@@ -304,8 +334,26 @@ export class MapChangeApi extends GeneratorApi {
     if (state) state.generatedPaths.add(path);
   }
 
-  async generate(path: string, cb: (path: string) => Promise<string>): Promise<void> {
+  async generate(
+    path: string,
+    cb: (path: string, deps: Record<string, never>) => Promise<string>,
+  ): Promise<void>;
+  async generate<D extends { [key: string]: Promise<any> }>(
+    path: string,
+    deps: D,
+    cb: (path: string, resolvedDeps: D) => Promise<string>,
+  ): Promise<void>;
+  async generate(path: string, ...args: Array<any>): Promise<void> {
     const { macrome, change } = this;
+    let deps: Record<string, any> = {};
+    let cb: <D>(path: string, resolvedDeps: D) => Promise<string>;
+    if (args.length <= 1) {
+      cb = args[0];
+    } else {
+      deps = args[0];
+      cb = args[1];
+    }
+
     let handle;
     try {
       handle = await open(path, 'r');
@@ -341,6 +389,6 @@ export class MapChangeApi extends GeneratorApi {
       handle?.close();
     }
 
-    return super.generate(path, cb);
+    return super.generate(path, deps, cb);
   }
 }

@@ -4,6 +4,9 @@ import type { WriteOptions, ReadOptions, Accessor, MappableChange, Annotations, 
 import { FileHandle } from 'fs/promises';
 import { Errawr } from 'errawr';
 declare const _: unique symbol;
+declare type PromiseDict = {
+    [key: string]: Promise<any>;
+};
 export declare class ApiError extends Errawr {
     get name(): string;
 }
@@ -32,7 +35,8 @@ export declare class Api {
     }): Promise<Annotations | null>;
     read(path: string, options: ReadOptions): Promise<string>;
     write(path: string, content: string | Error, options?: WriteOptions): Promise<void>;
-    generate(path: string, cb: (path: string) => Promise<string>): Promise<void>;
+    generate(path: string, cb: (path: string, deps: Record<string, never>) => Promise<string>): Promise<void>;
+    generate<D extends PromiseDict>(path: string, deps: D, cb: (path: string, resolvedDeps: D) => Promise<string>): Promise<void>;
 }
 declare type GeneratorApiProtected = ApiProtected & {
     generatorPath: string;
@@ -58,6 +62,9 @@ export declare class MapChangeApi extends GeneratorApi {
     buildAnnotations(destPath: string): Map<string, any>;
     buildErrorAnnotations(destPath: string): Map<string, any>;
     write(path: string, content: string, options: WriteOptions): Promise<void>;
-    generate(path: string, cb: (path: string) => Promise<string>): Promise<void>;
+    generate(path: string, cb: (path: string, deps: Record<string, never>) => Promise<string>): Promise<void>;
+    generate<D extends {
+        [key: string]: Promise<any>;
+    }>(path: string, deps: D, cb: (path: string, resolvedDeps: D) => Promise<string>): Promise<void>;
 }
 export {};
