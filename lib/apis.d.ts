@@ -36,7 +36,7 @@ export declare class Api {
     read(path: string, options: ReadOptions): Promise<string>;
     write(path: string, content: string | Error, options?: WriteOptions): Promise<void>;
     generate(path: string, cb: (path: string, deps: Record<string, never>) => Promise<string>): Promise<void>;
-    generate<D extends PromiseDict>(path: string, deps: D, cb: (path: string, resolvedDeps: D) => Promise<string>): Promise<void>;
+    __generate(path: string, deps: PromiseDict, cb: (path: string, resolvedDeps: Record<string, any>) => Promise<string>): Promise<void>;
 }
 declare type GeneratorApiProtected = ApiProtected & {
     generatorPath: string;
@@ -62,9 +62,6 @@ export declare class MapChangeApi extends GeneratorApi {
     buildAnnotations(destPath: string): Map<string, any>;
     buildErrorAnnotations(destPath: string): Map<string, any>;
     write(path: string, content: string, options: WriteOptions): Promise<void>;
-    generate(path: string, cb: (path: string, deps: Record<string, never>) => Promise<string>): Promise<void>;
-    generate<D extends {
-        [key: string]: Promise<any>;
-    }>(path: string, deps: D, cb: (path: string, resolvedDeps: D) => Promise<string>): Promise<void>;
+    __generate(path: string, deps: PromiseDict, cb: (path: string, resolvedDeps: Record<string, any>) => Promise<string>): Promise<void>;
 }
 export {};

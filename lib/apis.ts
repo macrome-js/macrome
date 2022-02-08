@@ -14,7 +14,7 @@ import type {
 import { relative, resolve, dirname, extname } from 'path';
 import { FileHandle, mkdir, open } from 'fs/promises';
 import { Errawr, invariant, rawr } from 'errawr';
-import { objectValues } from 'iter-tools-es';
+import { objectEntries, objectValues } from 'iter-tools-es';
 import { buildOptions } from './utils/fs';
 import { printRelative } from './utils/path';
 import { logger as baseLogger } from './utils/logger';
@@ -24,6 +24,9 @@ const _ = Symbol.for('private members');
 const logger = baseLogger.get('macrome:api');
 
 type PromiseDict = { [key: string]: Promise<any> };
+type ResolvedPromiseDict<D> = {
+  [K in keyof D]: Awaited<D[K]>;
+};
 
 export class ApiError extends Errawr {
   get name(): string {
@@ -198,11 +201,11 @@ export class Api {
   async generate<D extends PromiseDict>(
     path: string,
     deps: D,
-    cb: (path: string, resolvedDeps: D) => Promise<string>,
+    cb: (path: string, resolvedDeps: ResolvedPromiseDict<D>) => Promise<string>,
   ): Promise<void>;
   async generate(path: string, ...args: Array<any>): Promise<void> {
     let deps: PromiseDict = {};
-    let cb: <D>(path: string, resolvedDeps: D) => Promise<string>;
+    let cb: (path: string, resolvedDeps: PromiseDict) => Promise<string>;
     if (args.length <= 1) {
       cb = args[0];
     } else {
@@ -210,6 +213,14 @@ export class Api {
       cb = args[1];
     }
 
+    return await this.__generate(path, deps, cb);
+  }
+
+  async __generate(
+    path: string,
+    deps: PromiseDict,
+    cb: (path: string, resolvedDeps: Record<string, any>) => Promise<string>,
+  ): Promise<void> {
     for (const dep of objectValues(deps)) {
       invariant(
         dep instanceof Promise,
@@ -219,9 +230,12 @@ export class Api {
 
     let content = null;
     try {
-      await Promise.all(objectValues(deps));
+      const resolvedDeps: Record<string, any> = {};
+      for (const [name, dep] of objectEntries(deps)) {
+        resolvedDeps[name] = await dep;
+      }
 
-      content = await cb(path, deps);
+      content = await cb(path, resolvedDeps);
     } catch (e: any) {
       logger.warn(`Failed generating {path: ${path}}`);
       content = asError(e);
@@ -334,25 +348,12 @@ export class MapChangeApi extends GeneratorApi {
     if (state) state.generatedPaths.add(path);
   }
 
-  async generate(
+  async __generate(
     path: string,
-    cb: (path: string, deps: Record<string, never>) => Promise<string>,
-  ): Promise<void>;
-  async generate<D extends { [key: string]: Promise<any> }>(
-    path: string,
-    deps: D,
-    cb: (path: string, resolvedDeps: D) => Promise<string>,
-  ): Promise<void>;
-  async generate(path: string, ...args: Array<any>): Promise<void> {
+    deps: PromiseDict,
+    cb: (path: string, resolvedDeps: Record<string, any>) => Promise<string>,
+  ): Promise<void> {
     const { macrome, change } = this;
-    let deps: Record<string, any> = {};
-    let cb: <D>(path: string, resolvedDeps: D) => Promise<string>;
-    if (args.length <= 1) {
-      cb = args[0];
-    } else {
-      deps = args[0];
-      cb = args[1];
-    }
 
     let handle;
     try {
@@ -389,6 +390,6 @@ export class MapChangeApi extends GeneratorApi {
       handle?.close();
     }
 
-    return super.generate(path, deps, cb);
+    return super.__generate(path, deps, cb);
   }
 }
