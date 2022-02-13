@@ -71,7 +71,7 @@ export declare class MapChangeApi extends GeneratorApi {
     buildAnnotations(destPath: string): Map<string, any>;
     buildErrorAnnotations(destPath: string): Map<string, any>;
     write(path: string, content: string, options: WriteOptions): Promise<void>;
-    __generate(path: string, deps: PromiseDict, cb: (resolvedDeps: {
+    __generate(destPath: string, deps: PromiseDict, cb: (resolvedDeps: {
         destPath: string;
     } & Record<string, any>) => Promise<string | null>): Promise<void>;
 }

@@ -345,7 +345,7 @@ export class MapChangeApi extends GeneratorApi {
   }
 
   async __generate(
-    path: string,
+    destPath: string,
     deps: PromiseDict,
     cb: (resolvedDeps: { destPath: string } & Record<string, any>) => Promise<string | null>,
   ): Promise<void> {
@@ -353,24 +353,24 @@ export class MapChangeApi extends GeneratorApi {
 
     let handle;
     try {
-      handle = await open(path, 'r');
+      handle = await open(destPath, 'r');
       const stats = await handle.stat();
       const targetMtime = Math.floor(stats.mtimeMs);
-      const targetAnnotations = await this.readAnnotations(path, { fd: handle });
+      const targetAnnotations = await this.readAnnotations(destPath, { fd: handle });
 
       const targetGeneratedFrom = targetAnnotations?.get('generatedfrom');
 
       if (targetGeneratedFrom) {
         const [fromPath, version] = targetGeneratedFrom.split('#');
         if (
-          this.resolve(change.path) === resolve(dirname(this.resolve(path)), fromPath) &&
+          this.resolve(change.path) === resolve(dirname(this.resolve(destPath)), fromPath) &&
           String(change.reported.mtimeMs) === version
         ) {
           // The target is already generated from this version of this source
 
           if (change.op === 'A') {
             // Since we are not generating the target, make sure its info is loaded
-            macrome.state.set(path, {
+            macrome.state.set(destPath, {
               mtimeMs: targetMtime,
               annotations: targetAnnotations,
               generatedPaths: new Set(),
@@ -386,6 +386,10 @@ export class MapChangeApi extends GeneratorApi {
       handle?.close();
     }
 
-    return super.__generate(path, deps, cb);
+    const destPath_ = destPath.startsWith('.')
+      ? resolve(dirname(this.change.path), destPath)
+      : destPath;
+
+    return super.__generate(destPath_, deps, cb);
   }
 }
