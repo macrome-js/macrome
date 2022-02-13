@@ -137,9 +137,8 @@ export type AsymmetricMMatchExpressionWithSuffixes = AsymmetricMMatchExpression 
 
 export type WatchmanExpression = Array<unknown>;
 
-export interface Generator<T> extends AsymmetricMMatchExpression {
-  // eslint-disable-next-line @typescript-eslint/no-misused-new
-  new (options: Record<string, any>): Generator<T>;
+export interface Generator<O, T> extends AsymmetricMMatchExpression {
+  options: O;
 
   initialize?(api: GeneratorApi): Promise<unknown>;
 
@@ -148,4 +147,9 @@ export interface Generator<T> extends AsymmetricMMatchExpression {
   reduce?(api: GeneratorApi, changeMap: Map<string, T>): Promise<unknown>;
 
   destroy?(api: GeneratorApi): Promise<unknown>;
+}
+
+export interface GeneratorStatic<T> {
+  // eslint-disable-next-line @typescript-eslint/no-misused-new
+  new <O>(options: O): Generator<O, T>;
 }

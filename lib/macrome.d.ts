@@ -19,22 +19,22 @@ export declare class Macrome {
     api: Api;
     vcsConfig: VCSConfig | null;
     watchClient: WatchmanClient | null;
-    generators: Map<string, Array<Generator<unknown>>>;
-    generatorsMeta: WeakMap<Generator<unknown>, GeneratorMeta>;
+    generators: Map<string, Array<Generator<unknown, unknown>>>;
+    generatorsMeta: WeakMap<Generator<unknown, unknown>, GeneratorMeta>;
     queue: Queue<EnqueuedChange> | null;
     accessorsByFileType: Map<string, Accessor>;
     state: Map<string, FileState>;
     constructor(apiOptions: Options);
     get logger(): any;
     protected __initialize(): Promise<void>;
-    protected get generatorInstances(): IterableIterator<Generator<unknown>>;
+    protected get generatorInstances(): IterableIterator<Generator<unknown, unknown>>;
     protected __instantiateGenerators(generatorPath: string): Promise<void>;
-    protected __forMatchingGenerators(path: string, cb: (generator: Generator<unknown>, meta: GeneratorMeta) => unknown): Promise<void>;
+    protected __forMatchingGenerators(path: string, cb: (generator: Generator<unknown, unknown>, meta: GeneratorMeta) => unknown): Promise<void>;
     protected __getBaseExpression(): AsymmetricMMatchExpressionWithSuffixes;
     protected __decorateChangeWithAnnotations(change: ReportedChange): Promise<AnnotatedChange>;
     protected __scanChanges(): Promise<Array<AnnotatedChange>>;
     accessorFor(path: string): Accessor | null;
-    getAnnotations(path: string, options?: {
+    readAnnotations(path: string, options?: {
         fd?: FileHandle;
     }): Promise<Annotations | null>;
     clean(): Promise<void>;

@@ -2,7 +2,6 @@ import type { Macrome } from './macrome';
 import type {
   WriteOptions,
   ReadOptions,
-  Accessor,
   File,
   MappableChange,
   Annotations,
@@ -73,11 +72,11 @@ export class Api {
     return this[_].destroyed;
   }
 
-  destroy(): void {
+  __destroy(): void {
     this[_].destroyed = true;
   }
 
-  protected decorateError(error: Error, verb: string): Error {
+  protected __decorateError(error: Error, verb: string): Error {
     return new ApiError(`macrome ${verb} failed`, { cause: error });
   }
 
@@ -102,26 +101,23 @@ export class Api {
     return this[_].macrome.resolve(path);
   }
 
-  accessorFor(path: string): Accessor | null {
-    return this[_].macrome.accessorFor(path);
-  }
-
-  async getAnnotations(path: string, options?: { fd?: FileHandle }): Promise<Annotations | null> {
-    return await this[_].macrome.getAnnotations(path, options);
+  async readAnnotations(path: string, options?: { fd?: FileHandle }): Promise<Annotations | null> {
+    return await this[_].macrome.readAnnotations(path, options);
   }
 
   async read(path: string, options: ReadOptions): Promise<string> {
+    const { macrome } = this;
     this.__assertNotDestroyed('read');
 
     const { encoding = 'utf8', ..._options } = buildOptions(options);
-    const accessor = this.accessorFor(path)!;
+    const accessor = macrome.accessorFor(path)!;
 
     try {
       const result = await accessor.read(this.resolve(path), { encoding, ..._options });
 
       return result.content;
     } catch (e: any) {
-      throw this.decorateError(e, 'read');
+      throw this.__decorateError(e, 'read');
     }
   }
 
@@ -132,7 +128,7 @@ export class Api {
       content instanceof Error ? this.buildErrorAnnotations(path) : this.buildAnnotations(path);
 
     const { macrome } = this[_];
-    const accessor = this.accessorFor(path);
+    const accessor = macrome.accessorFor(path);
 
     if (!accessor) {
       throw new Errawr(rawr('macrome has no accessor for writing to {ext} files'), {
@@ -190,22 +186,22 @@ export class Api {
       } as AnnotatedAddChange | AnnotatedModifyChange);
     } catch (e: any) {
       await fd?.close();
-      throw this.decorateError(e, 'write');
+      throw this.__decorateError(e, 'write');
     }
   }
 
   async generate(
     path: string,
-    cb: (path: string, deps: Record<string, never>) => Promise<string>,
+    cb: (props: { destPath: string } & Record<string, never>) => Promise<string | null>,
   ): Promise<void>;
   async generate<D extends PromiseDict>(
     path: string,
     deps: D,
-    cb: (path: string, resolvedDeps: ResolvedPromiseDict<D>) => Promise<string>,
+    cb: (props: { destPath: string } & ResolvedPromiseDict<D>) => Promise<string | null>,
   ): Promise<void>;
   async generate(path: string, ...args: Array<any>): Promise<void> {
     let deps: PromiseDict = {};
-    let cb: (path: string, resolvedDeps: PromiseDict) => Promise<string>;
+    let cb: (props: PromiseDict) => Promise<string>;
     if (args.length <= 1) {
       cb = args[0];
     } else {
@@ -217,9 +213,9 @@ export class Api {
   }
 
   async __generate(
-    path: string,
+    destPath: string,
     deps: PromiseDict,
-    cb: (path: string, resolvedDeps: Record<string, any>) => Promise<string>,
+    cb: (props: { destPath: string } & Record<string, any>) => Promise<string | null>,
   ): Promise<void> {
     for (const dep of objectValues(deps)) {
       invariant(
@@ -230,18 +226,18 @@ export class Api {
 
     let content = null;
     try {
-      const resolvedDeps: Record<string, any> = {};
+      const props: Record<string, any> & { destPath: string } = { destPath };
       for (const [name, dep] of objectEntries(deps)) {
-        resolvedDeps[name] = await dep;
+        props[name] = await dep;
       }
 
-      content = await cb(path, resolvedDeps);
+      content = await cb(props);
     } catch (e: any) {
-      logger.warn(`Failed generating {path: ${path}}`);
+      logger.warn(`Failed generating {destPath: ${destPath}}`);
       content = asError(e);
     }
     if (content != null) {
-      await this.write(path, content);
+      await this.write(destPath, content);
     }
   }
 }
@@ -311,7 +307,7 @@ export class MapChangeApi extends GeneratorApi {
     return String(this.change.reported.mtimeMs);
   }
 
-  protected decorateError(error: Error, verb: string): Error {
+  protected __decorateError(error: Error, verb: string): Error {
     const { generatorPath, change } = this[_];
 
     return new ApiError(rawr('macrome {{verb}} failed', { rest: true }), {
@@ -351,7 +347,7 @@ export class MapChangeApi extends GeneratorApi {
   async __generate(
     path: string,
     deps: PromiseDict,
-    cb: (path: string, resolvedDeps: Record<string, any>) => Promise<string>,
+    cb: (resolvedDeps: { destPath: string } & Record<string, any>) => Promise<string | null>,
   ): Promise<void> {
     const { macrome, change } = this;
 
@@ -360,7 +356,7 @@ export class MapChangeApi extends GeneratorApi {
       handle = await open(path, 'r');
       const stats = await handle.stat();
       const targetMtime = Math.floor(stats.mtimeMs);
-      const targetAnnotations = await this.getAnnotations(path, { fd: handle });
+      const targetAnnotations = await this.readAnnotations(path, { fd: handle });
 
       const targetGeneratedFrom = targetAnnotations?.get('generatedfrom');
 

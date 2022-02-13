@@ -3,6 +3,7 @@ import type {
   FileState,
   Accessor,
   Generator,
+  GeneratorStatic,
   ReportedChange,
   AnnotatedChange,
   EnqueuedChange,
@@ -52,8 +53,8 @@ export class Macrome {
   api: Api;
   vcsConfig: VCSConfig | null = null;
   watchClient: WatchmanClient | null = null;
-  generators: Map<string, Array<Generator<unknown>>>;
-  generatorsMeta: WeakMap<Generator<unknown>, GeneratorMeta>;
+  generators: Map<string, Array<Generator<unknown, unknown>>>;
+  generatorsMeta: WeakMap<Generator<unknown, unknown>, GeneratorMeta>;
   queue: Queue<EnqueuedChange> | null = null;
   accessorsByFileType: Map<string, Accessor>;
   state: Map<string, FileState>;
@@ -107,17 +108,17 @@ export class Macrome {
     this.initialized = true;
   }
 
-  protected get generatorInstances(): IterableIterator<Generator<unknown>> {
+  protected get generatorInstances(): IterableIterator<Generator<unknown, unknown>> {
     return flat(1, this.generators.values());
   }
 
   protected async __instantiateGenerators(generatorPath: string): Promise<void> {
-    const Generator: Generator<unknown> = requireFresh(generatorPath);
+    const Generator: GeneratorStatic<unknown> = requireFresh(generatorPath);
 
     for (const generator of get(this.generators, generatorPath, [])) {
       const { api } = this.generatorsMeta.get(generator)!;
       await generator.destroy?.(api);
-      api.destroy();
+      api.__destroy();
     }
 
     this.generators.set(generatorPath, []);
@@ -138,7 +139,7 @@ export class Macrome {
 
   protected async __forMatchingGenerators(
     path: string,
-    cb: (generator: Generator<unknown>, meta: GeneratorMeta) => unknown,
+    cb: (generator: Generator<unknown, unknown>, meta: GeneratorMeta) => unknown,
   ): Promise<void> {
     const { generatorsMeta } = this;
 
@@ -195,7 +196,7 @@ export class Macrome {
     return this.accessorsByFileType.get(ext) || null;
   }
 
-  async getAnnotations(path: string, options?: { fd?: FileHandle }): Promise<Annotations | null> {
+  async readAnnotations(path: string, options?: { fd?: FileHandle }): Promise<Annotations | null> {
     const accessor = this.accessorsByFileType.get(extname(path).slice(1));
 
     if (!accessor) return null;
@@ -339,7 +340,7 @@ export class Macrome {
                 ),
               );
             } finally {
-              api.destroy();
+              api.__destroy();
               generatorsToReduce.add(generator);
             }
           });
@@ -353,7 +354,7 @@ export class Macrome {
 
         for (const path of wrap(prevGeneratedPaths)) {
           // Ensure the user hasn't deleted our annotations and started manually editing this file
-          if (!generatedPaths.has(path) && (await this.getAnnotations(path)) !== null) {
+          if (!generatedPaths.has(path) && (await this.readAnnotations(path)) !== null) {
             await unlink(this.resolve(path));
 
             this.enqueue(

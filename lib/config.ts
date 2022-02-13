@@ -82,9 +82,12 @@ export function buildOptions(apiOptions: Options = {}): BuiltOptions {
     map(([path, options]) => {
       const _options = { ...options, logger };
 
-      const resolvedPath = require.resolve(getRequirePath(resolve(root_, path)), {
-        paths: [root_],
-      });
+      const resolvedPath = require.resolve(
+        getRequirePath(path.startsWith('.') ? resolve(root_, path) : path),
+        {
+          paths: [root_],
+        },
+      );
 
       return { options: _options, path, resolvedPath };
     }),
