@@ -159,6 +159,7 @@ export class Api {
         annotations = await accessor.readAnnotations(this.resolve(path), { fd });
         if (annotations === null) {
           throw new Errawr(rawr('macrome cannot overwrite non-generated {path}'), {
+            code: 'macrome-would-overwrite-source',
             info: { path, mtimeMs, before },
           });
         }

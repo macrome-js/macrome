@@ -18,7 +18,16 @@ import { join, dirname, basename, extname, relative } from 'path';
 import { unlink } from 'fs/promises';
 import requireFresh from 'import-fresh';
 import findUp from 'find-up';
-import { map, flat, flatMap, wrap, asyncMap, asyncToArray, execPipe } from 'iter-tools-es';
+import {
+  map,
+  flat,
+  flatMap,
+  wrap,
+  asyncMap,
+  asyncToArray,
+  execPipe,
+  takeLast,
+} from 'iter-tools-es';
 import Queue from '@iter-tools/queue';
 import { Errawr, rawr } from 'errawr';
 
@@ -328,17 +337,22 @@ export class Macrome {
               const mapResult = generator.map ? await generator.map(api, change) : change;
               mappings.set(path, mapResult);
             } catch (error: any) {
-              logger.error(
-                Errawr.print(
-                  new Errawr(
-                    rawr(`Error mapping {path}`)({
-                      path,
-                      generator: api.generatorPath,
-                    }),
-                    { cause: error },
+              const rootCause: any = takeLast(Errawr.chain(error));
+              if (rootCause?.code === 'macrome-would-overwrite-source') {
+                logger.warn(rootCause.message);
+              } else {
+                logger.error(
+                  Errawr.print(
+                    new Errawr(
+                      rawr(`Error mapping {path}`)({
+                        path,
+                        generator: api.generatorPath,
+                      }),
+                      { cause: error },
+                    ),
                   ),
-                ),
-              );
+                );
+              }
             } finally {
               api.__destroy();
               generatorsToReduce.add(generator);
