@@ -369,6 +369,8 @@ export class Macrome {
         for (const path of wrap(prevGeneratedPaths)) {
           // Ensure the user hasn't deleted our annotations and started manually editing this file
           if (!generatedPaths.has(path) && (await this.readAnnotations(path)) !== null) {
+            logger.info(`removing {path: ${path}} which is no longer being generated`);
+
             await unlink(this.resolve(path));
 
             this.enqueue(
@@ -560,7 +562,7 @@ export class Macrome {
   }
 
   relative(path: string): string {
-    return relative(this.root, path);
+    return relative(this.root, this.resolve(path));
   }
 
   resolve(path: string): string {

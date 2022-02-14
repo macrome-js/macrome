@@ -24,7 +24,6 @@ export declare class Api {
     protected [_]: ApiProtected;
     constructor(macrome: Macrome);
     protected __assertNotDestroyed(methodName: string): void;
-    get macrome(): Macrome;
     get destroyed(): boolean;
     __destroy(): void;
     protected __decorateError(error: Error, verb: string): Error;

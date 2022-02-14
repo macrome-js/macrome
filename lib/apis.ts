@@ -65,10 +65,6 @@ export class Api {
     }
   }
 
-  get macrome(): Macrome {
-    return this[_].macrome;
-  }
-
   get destroyed(): boolean {
     return this[_].destroyed;
   }
@@ -107,7 +103,7 @@ export class Api {
   }
 
   async read(path: string, options: ReadOptions): Promise<string> {
-    const { macrome } = this;
+    const { macrome } = this[_];
     this.__assertNotDestroyed('read');
 
     const { encoding = 'utf8', ..._options } = buildOptions(options);
@@ -219,6 +215,7 @@ export class Api {
     deps: PromiseDict,
     cb: (props: { destPath: string } & Record<string, any>) => Promise<string | null>,
   ): Promise<void> {
+    const { macrome } = this[_];
     for (const dep of objectValues(deps)) {
       invariant(
         dep instanceof Promise,
@@ -235,7 +232,7 @@ export class Api {
 
       content = await cb(props);
     } catch (e: any) {
-      logger.warn(`Failed generating {destPath: ${destPath}}`);
+      logger.warn(`Failed generating {destPath: ${macrome.relative(destPath)}}`);
       content = asError(e);
     }
     if (content != null) {
@@ -351,7 +348,7 @@ export class MapChangeApi extends GeneratorApi {
     deps: PromiseDict,
     cb: (resolvedDeps: { destPath: string } & Record<string, any>) => Promise<string | null>,
   ): Promise<void> {
-    const { macrome, change } = this;
+    const { macrome, change } = this[_];
 
     let handle;
     try {
