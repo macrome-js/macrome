@@ -224,7 +224,7 @@ export class Macrome {
   }
 
   enqueue(change: AnnotatedChange): void {
-    const { op, reported, annotations } = change;
+    const { op, reported } = change;
     const { path } = reported;
     const state = this.state.get(path);
 
@@ -234,11 +234,6 @@ export class Macrome {
       if (state?.mtimeMs === reported.mtimeMs) {
         // This is an "echo" change: the watcher is reporting it but it was already enqueued synchronously
         return;
-      } else {
-        if (annotations?.has('generatefailed')) {
-          // Failure files are just placeholders, don't treat them as real inputs
-          return;
-        }
       }
     }
 
@@ -247,16 +242,12 @@ export class Macrome {
 
   __enqueue(change: AnnotatedChange): void {
     const queue = this.queue!;
-    const { reported } = change;
+    const { reported, annotations } = change;
     const { path } = reported;
 
     const prevState = this.state.get(path) || null;
 
-    logger.debug(
-      `enqueueing ${verbFor(change)} ${path}` +
-        (reported.op !== 'D' ? ` modified at ${reported.mtimeMs}` : ''),
-    );
-
+    let enquedChange: EnqueuedChange;
     if (change.op !== 'D') {
       const { reported, annotations = null } = change;
       const { mtimeMs } = reported;
@@ -266,25 +257,34 @@ export class Macrome {
 
       this.state.set(path, state);
 
-      queue.push({
+      enquedChange = {
         op: change.op,
         path,
         reported,
         annotations,
         state,
         prevState,
-      } as MappableChange);
+      } as MappableChange;
     } else {
       this.state.delete(path);
 
-      queue.push({
+      enquedChange = {
         op: change.op,
         path,
         reported: change.reported,
         annotations: null,
         state: null,
         prevState: prevState!,
-      });
+      };
+    }
+
+    // We need to update state for these paths, but there's no point in allowing them as inputs
+    if (!annotations?.has('generatefailed')) {
+      logger.debug(
+        `enqueueing ${verbFor(change)} ${path}` +
+          (reported.op !== 'D' ? ` modified at ${reported.mtimeMs}` : ''),
+      );
+      queue.push(enquedChange);
     }
   }
 
