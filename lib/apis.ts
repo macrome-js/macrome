@@ -14,6 +14,7 @@ import { relative, resolve, dirname, extname } from 'path';
 import { FileHandle, mkdir, open } from 'fs/promises';
 import { Errawr, invariant, rawr } from 'errawr';
 import { objectEntries, objectValues } from 'iter-tools-es';
+import stripAnsi from 'strip-ansi';
 import { buildOptions } from './utils/fs';
 import { printRelative } from './utils/path';
 import { logger as baseLogger } from './utils/logger';
@@ -93,7 +94,7 @@ export class Api {
 
   buildErrorContent(error: Error): string {
     const stack = error.stack || String(error);
-    const escaped = stack.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
+    const escaped = stripAnsi(stack.replace(/\\/g, '\\\\').replace(/`/g, '\\`'));
     return `throw new Error(\`${escaped}\`);`;
   }
 
