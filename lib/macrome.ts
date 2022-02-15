@@ -180,8 +180,12 @@ export class Macrome {
 
       if (accessor) {
         const fd = await openKnownFileForReading(path, change.mtimeMs);
-        annotations = await accessor.readAnnotations(path, { fd });
-        await fd.close();
+
+        try {
+          annotations = await this.readAnnotations(path, { fd });
+        } finally {
+          await fd.close();
+        }
       }
       return { op: change.op, reported: change, annotations } as  // why is this cast necessary???
         | AnnotatedAddChange
@@ -209,6 +213,8 @@ export class Macrome {
     const accessor = this.accessorsByFileType.get(extname(path).slice(1));
 
     if (!accessor) return null;
+
+    logger.get('acessors').debug(`Reading annotations for {path: ${path}}`);
 
     return await accessor.readAnnotations(this.resolve(path), options);
   }

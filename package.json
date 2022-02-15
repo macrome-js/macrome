@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "A build system for checked in assets",
   "main": "lib/index",
+  "exports": {
+    ".": "./lib/index.js"
+  },
   "bin": {
     "macrome": "./bin/cli.js"
   },

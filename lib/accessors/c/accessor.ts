@@ -9,9 +9,6 @@ import { first, firstOr } from 'iter-tools-es';
 import { parse, exec } from '@iter-tools/regex/dist/async/chunked';
 import { CCommentParser } from './parser';
 import { buildOptions } from '../../utils/fs';
-import { logger as baseLogger } from '../../utils/logger';
-
-const logger = baseLogger.get('macrome:accessors:c');
 
 const prefixExp = /^#![^\r\n]*\r?\n/s;
 const firstCommentExp = /\s*\/\*\s*@macrome\b.*?\*\//s;
@@ -24,7 +21,6 @@ export class CAccessor implements Accessor {
   commentParser = new CCommentParser();
 
   async readAnnotations(path: string, options?: { fd: FileHandle }): Promise<Annotations | null> {
-    logger.debug(`Reading annotations for {path: ${path}}`);
     const match = await exec(headerExp, await createReadStream(path, buildOptions(options)));
     return match && this.commentParser.parse(match[2]).annotations;
   }
