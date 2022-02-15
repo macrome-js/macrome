@@ -1,8 +1,9 @@
 import type { FileHandle } from 'fs/promises';
-import { pipeline } from 'stream/promises';
+import { pipeline as pipelineCb } from 'stream';
 import type { Accessor, Annotations, File, ReadOptions, WriteOptions } from '../../types';
 
 import { createReadStream, createWriteStream } from 'fs';
+import { promisify } from 'util';
 import { readFile } from 'fs/promises';
 import { first, firstOr } from 'iter-tools-es';
 // @ts-ignore
@@ -15,6 +16,8 @@ const firstCommentExp = /\s*\/\*\s*@macrome\b.*?\*\//s;
 const headerExp = parse(`^(${prefixExp.source})?(${firstCommentExp.source})`, 's');
 
 const supportedFileTypes = ['js', 'jsx', 'ts', 'tsx', 'cjs', 'mjs'];
+
+const pipeline = promisify(pipelineCb);
 
 export class CAccessor implements Accessor {
   supportedFileTypes = supportedFileTypes;

@@ -10,7 +10,7 @@
     "macrome": "./bin/cli.js"
   },
   "engines": {
-    "node": ">=15.0.0"
+    "node": ">=12.0.0"
   },
   "files": [
     "lib/**/*.js",
