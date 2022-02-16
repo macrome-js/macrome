@@ -55,17 +55,23 @@ const getRequirePath = (base: string): string => {
 export function buildOptions(apiOptions: Options = {}): BuiltOptions {
   let root: string | null = apiOptions.root ? resolve(apiOptions.root) : null;
 
-  const configPath =
-    apiOptions.configPath === null
-      ? null
-      : findUp.sync(['macrome.config.js', 'macrome.config.cjs'], { cwd: root || process.cwd() }) ||
-        null;
+  let configPath = apiOptions.configPath || null;
+
+  if (configPath === null) {
+    logger.debug(`Searching for config starting from {path: ${root || process.cwd()}}`);
+    const foundConfig = findUp.sync(['macrome.config.js', 'macrome.config.cjs'], {
+      cwd: root || process.cwd(),
+    });
+    if (foundConfig) {
+      configPath = foundConfig;
+      logger.debug(`Located config at {path: ${configPath}}`);
+    }
+  }
 
   const configOptions: Options = configPath === null ? {} : requireFresh(configPath);
 
   if (configOptions.configPath) {
-    logger.warn('configPath is not a valid option in a config file.');
-    delete configOptions.configPath;
+    throw new Error('configPath is not a valid option in a config file');
   }
 
   root = root || (configPath && dirname(configPath));

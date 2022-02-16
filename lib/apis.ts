@@ -270,19 +270,13 @@ export class GeneratorApi extends Api {
   buildAnnotations(_destPath?: string): Map<string, any> {
     const { generatorPath } = this[_];
 
-    return new Map<string, any>([
-      ...super.buildAnnotations(),
-      ['generatedby', `/${generatorPath}`],
-    ]);
+    return new Map<string, any>([...super.buildAnnotations(), ['generatedby', generatorPath]]);
   }
 
   buildErrorAnnotations(_destPath?: string): Map<string, any> {
     const { generatorPath } = this[_];
 
-    return new Map<string, any>([
-      ...super.buildErrorAnnotations(),
-      ['generatedby', `/${generatorPath}`],
-    ]);
+    return new Map<string, any>([...super.buildErrorAnnotations(), ['generatedby', generatorPath]]);
   }
 }
 

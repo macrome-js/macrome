@@ -37,10 +37,10 @@ export declare class Macrome {
     readAnnotations(path: string, options?: {
         fd?: FileHandle;
     }): Promise<Annotations | null>;
-    clean(): Promise<void>;
     enqueue(change: AnnotatedChange): void;
     __enqueue(change: AnnotatedChange): void;
     processChanges(): Promise<void>;
+    clean(): Promise<void>;
     __build(changes: Array<AnnotatedChange>): Promise<void>;
     build(): Promise<void>;
     watch(): Promise<void>;

@@ -14,7 +14,7 @@ import type {
   AnnotatedModifyChange,
 } from './types';
 
-import { join, dirname, basename, extname, relative } from 'path';
+import { join, dirname, basename, extname, relative, resolve } from 'path';
 import { unlink } from 'fs/promises';
 import requireFresh from 'import-fresh';
 import findUp from 'find-up';
@@ -134,10 +134,13 @@ export class Macrome {
 
     const stubs = this.options.generators.get(generatorPath)!;
 
-    for (const stub of stubs) {
+    for (const { options, path } of stubs) {
       const mappings = new Map();
-      const generator = new Generator(stub.options);
-      const api = GeneratorApi.fromApi(this.api, relative(this.watchRoot, generatorPath));
+      const generator = new Generator(options);
+      const api = GeneratorApi.fromApi(
+        this.api,
+        /^[./]/.test(path) ? `/${relative(this.watchRoot, generatorPath)}` : path,
+      );
 
       await generator.initialize?.(api);
 
@@ -217,16 +220,6 @@ export class Macrome {
     logger.get('accessors').debug(`Reading annotations for {path: ${path}}`);
 
     return await accessor.readAnnotations(this.resolve(path), options);
-  }
-
-  async clean(): Promise<void> {
-    const changes = await this.__scanChanges();
-
-    for (const change of changes) {
-      if (change.op !== 'D' && change.annotations != null) {
-        await unlink(this.resolve(change.reported.path));
-      }
-    }
   }
 
   enqueue(change: AnnotatedChange): void {
@@ -413,6 +406,16 @@ export class Macrome {
     }
   }
 
+  async clean(): Promise<void> {
+    const changes = await this.__scanChanges();
+
+    for (const change of changes) {
+      if (change.op !== 'D' && change.annotations != null) {
+        await unlink(this.resolve(change.reported.path));
+      }
+    }
+  }
+
   async __build(changes: Array<AnnotatedChange>): Promise<void> {
     if (!this.initialized) await this.__initialize();
 
@@ -572,6 +575,6 @@ export class Macrome {
   }
 
   resolve(path: string): string {
-    return path.startsWith('/') ? path : join(this.root, path);
+    return path.startsWith('/') ? path : resolve(this.root, path);
   }
 }
