@@ -1713,7 +1713,7 @@ enquirer@^2.3.5, enquirer@^2.3.6:
   dependencies:
     ansi-colors "^4.1.1"
 
-errawr@conartist6/errawr#5b6d2e6:
+errawr@conartist6/errawr#5b6d2e677f07d3f66ded17a8c0800c1ec85d0d40:
   version "0.1.0-alpha.3"
   resolved "https://codeload.github.com/conartist6/errawr/tar.gz/5b6d2e677f07d3f66ded17a8c0800c1ec85d0d40"
   dependencies:
