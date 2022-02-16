@@ -119,21 +119,26 @@ export class Api {
   }
 
   async write(path: string, content: string | Error, options: WriteOptions = {}): Promise<void> {
+    const { macrome } = this[_];
     this.__assertNotDestroyed('write');
 
-    const annotations =
-      content instanceof Error ? this.buildErrorAnnotations(path) : this.buildAnnotations(path);
+    const relPath = macrome.relative(path);
+    const absPath = macrome.resolve(path);
 
-    const { macrome } = this[_];
-    const accessor = macrome.accessorFor(path);
+    const annotations =
+      content instanceof Error
+        ? this.buildErrorAnnotations(relPath)
+        : this.buildAnnotations(relPath);
+
+    const accessor = macrome.accessorFor(relPath);
 
     if (!accessor) {
       throw new Errawr(rawr('macrome has no accessor for writing to {ext} files'), {
-        info: { ext: extname(path), path },
+        info: { ext: extname(relPath), relPath },
       });
     }
 
-    await mkdir(dirname(path), { recursive: true });
+    await mkdir(dirname(relPath), { recursive: true });
 
     const file: File = {
       header: {
@@ -145,7 +150,7 @@ export class Api {
 
     let fd;
     try {
-      fd = await open(this.resolve(path), 'a+');
+      fd = await open(absPath, 'a+');
       const mtimeMs = Math.floor((await fd.stat()).mtimeMs);
       // -100 because Travis showed a 3ms discrepancy for reasons unknown
       // Is there a better way to implement this?
@@ -153,18 +158,18 @@ export class Api {
 
       let annotations = null;
       if (!new_) {
-        annotations = await accessor.readAnnotations(this.resolve(path), { fd });
+        annotations = await macrome.readAnnotations(relPath, { fd });
         if (annotations === null) {
           throw new Errawr(rawr('macrome cannot overwrite non-generated {path}'), {
             code: 'macrome-would-overwrite-source',
-            info: { path, mtimeMs, before },
+            info: { path: relPath, mtimeMs, before },
           });
         }
       }
 
       await fd.truncate();
 
-      await accessor.write(path, file, { ...buildOptions(options), fd });
+      await accessor.write(absPath, file, { ...buildOptions(options), fd });
 
       await fd.close();
 
@@ -177,7 +182,7 @@ export class Api {
         op,
         reported: {
           op,
-          path,
+          path: relPath,
           mtimeMs,
         },
         annotations,

@@ -214,7 +214,7 @@ export class Macrome {
 
     if (!accessor) return null;
 
-    logger.get('acessors').debug(`Reading annotations for {path: ${path}}`);
+    logger.get('accessors').debug(`Reading annotations for {path: ${path}}`);
 
     return await accessor.readAnnotations(this.resolve(path), options);
   }
@@ -287,8 +287,8 @@ export class Macrome {
     // We need to update state for these paths, but there's no point in allowing them as inputs
     if (!annotations?.has('generatefailed')) {
       logger.debug(
-        `enqueueing ${verbFor(change)} ${path}` +
-          (reported.op !== 'D' ? ` modified at ${reported.mtimeMs}` : ''),
+        `enqueueing ${verbFor(change)} {path: ${path}}` +
+          (reported.op !== 'D' ? ` modified at {mtimeMs: ${reported.mtimeMs}}` : ''),
       );
       queue.push(enquedChange);
     }
@@ -329,8 +329,8 @@ export class Macrome {
         if (state) state.generatedPaths = generatedPaths;
 
         logger.debug(
-          `executing ${verbFor(change)} ${path}` +
-            (reported.op !== 'D' ? ` modified at ${reported.mtimeMs}` : ''),
+          `executing ${verbFor(change)} {path: ${path}}` +
+            (reported.op !== 'D' ? ` modified at {mtimeMs: ${reported.mtimeMs}}` : ''),
         );
 
         if (change.op !== 'D') {

@@ -49,7 +49,7 @@
     "@iter-tools/regex": "^0.1.3",
     "@types/fb-watchman": "^2.0.1",
     "camelize": "^1.0.0",
-    "errawr": "conartist6/errawr#5b6d2e677f07d3f66ded17a8c0800c1ec85d0d40",
+    "errawr": "conartist6/errawr#b5437bd44c30a01d99cb9dabbddc98ebeb0724c9",
     "fb-watchman": "^2.0.1",
     "find-up": "^4.1.0",
     "git-state": "^4.1.0",
