@@ -1,6 +1,6 @@
 # Macromé
 
-Macrome helps you automate your boilerplate and harness the power of static, version controlled code. Macrome believes the following things about software development:
+Macrome (pronounced mac-row-may) helps you automate your boilerplate and harness the power of static, version controlled code. Macrome believes the following things about software development:
 
 **Your code is your product.**  
 **Your product should be under version control.**
