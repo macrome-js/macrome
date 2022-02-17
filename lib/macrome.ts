@@ -41,6 +41,7 @@ import accessors from './accessors';
 import { vcsConfigs, VCSConfig } from './vcs-configs';
 import { get } from './utils/map';
 import { openKnownFileForReading } from './utils/fs';
+import { timeout } from './utils/timer';
 
 const logger = baseLogger.get('macrome');
 
@@ -330,27 +331,26 @@ export class Macrome {
           await this.__forMatchingGenerators(path, async (generator, { mappings, api: genApi }) => {
             // Changes made through this api feed back into the queue
             const api = MapChangeApi.fromGeneratorApi(genApi, change);
+            const info = { path, generator: api.generatorPath };
 
             try {
               // generator.map()
-              const mapResult = generator.map ? await generator.map(api, change) : change;
+              const mapResult = generator.map
+                ? await Promise.race([generator.map(api, change), timeout(5000)])
+                : change;
               mappings.set(path, mapResult);
             } catch (error: any) {
               const rootCause: any = takeLast(Errawr.chain(error));
-              if (rootCause?.code === 'macrome-would-overwrite-source') {
+              if (rootCause?.code === 'macrome_would_overwrite_source') {
                 logger.warn(rootCause.message);
               } else {
-                logger.error(
-                  Errawr.print(
-                    new Errawr(
-                      rawr(`Error mapping {path}`)({
-                        path,
-                        generator: api.generatorPath,
-                      }),
-                      { cause: error },
-                    ),
-                  ),
-                );
+                // Generators must contractually handle their own error conditions, e.g. with api.generate();
+                // An unhandled exception is thus indicative of a programming error, and it is not safe to continue
+                throw new Errawr(rawr(`Error mapping {path}`), {
+                  code: 'map_unexpected_error',
+                  info,
+                  cause: error,
+                });
               }
             } finally {
               api.__destroy();
@@ -382,21 +382,17 @@ export class Macrome {
       }
 
       for (const generator of this.generatorInstances) {
-        if (generatorsToReduce.has(generator)) {
+        if (generatorsToReduce.has(generator) && generator.reduce) {
           const { mappings, api } = generatorsMeta.get(generator)!;
 
           try {
-            await generator.reduce?.(api, mappings);
+            await Promise.race([generator.reduce(api, mappings), timeout(10000)]);
           } catch (error) {
-            logger.error(
-              Errawr.print(
-                new Errawr(
-                  rawr(`Error reducing {generator}`)({
-                    generator: api.generatorPath,
-                  }),
-                  { cause: error },
-                ),
-              ),
+            throw new Errawr(
+              rawr(`Error reducing {generator}`)({
+                generator: api.generatorPath,
+              }),
+              { cause: error },
             );
           }
         }
