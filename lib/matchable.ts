@@ -1,7 +1,7 @@
 import type { AsymmetricMMatchExpression, Matcher, MMatchExpression } from './types';
 
-import { matcher as mmMatcher } from 'micromatch';
-import { filter, joinWithSeq, notNil, stringFrom } from 'iter-tools-es';
+import picomatch from 'picomatch';
+import { notNil } from 'iter-tools-es';
 
 export type { AsymmetricMMatchExpression, Matcher, MMatchExpression };
 
@@ -20,9 +20,9 @@ export function expressionMatcher(expr: MMatchExpression, type: 'include' | 'exc
   let isMatch;
 
   if (expr == null || (isArray(expr) && !expr.length)) isMatch = defaultMatchers[type];
-  else if (isString(expr)) isMatch = mmMatcher(expr);
+  else if (isString(expr)) isMatch = picomatch(expr);
   else if (isArray(expr)) {
-    isMatch = mmMatcher(`(${stringFrom(joinWithSeq('|', filter(isString, expr)))})`);
+    isMatch = picomatch(expr.filter(notNil));
   } else throw new Error('file matching pattern was not a string, Array, or null');
 
   return isMatch;
