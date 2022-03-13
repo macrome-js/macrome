@@ -1,28 +1,26 @@
 # Macromé
 
-Macrome (pronounced mac-row-may) helps you automate your boilerplate and harness the power of static, version controlled code. Macrome believes the following things about software development:
+Macrome (pronounced mac-row-may) is the in-tree build system. It is most closely related to `make`, and its principal innovation is its ability to manage generated scripts intermixed with source (human-written) scripts without ever losing track of which are which. It provides you the power of scripting against the filesystem while helping you avoid pitfalls like lost (overwritten) work or difficult to clean up messes. Generated 1000 files by accident? `macrome clean`!
 
-**Your code is your product.**  
-**Your product should be under version control.**
+Here is what it looks like when macrome is used to generate transpiled scripts inside the [@iter-tools/regex](https://github.com/iter-tools/regex) package:
 
-For more information about this philosophy and its advantages, read the blog post I haven't written yet.
+<img width="534" alt="Screen Shot 2022-03-12 at 5 43 43 PM" src="https://user-images.githubusercontent.com/540777/158040005-c5fb349e-4f38-4465-9997-2c5453cc186f.png">
 
-Some of Macrome's key features are:
-
-- Allows you to create data-driven files, such as static directory indexes
-- Allows you to safely mix generated and non-generated code in a single hierarchy
-  - Can always identify and clean generated code
-- Allows you to check generated code into git (or other VCS)
-  - CI can run `macrome check` to guard against stale and orphan outputs
-  - Allows you to omit generated files from code review (on Github)
-  - Watcher can keep running even across checkouts which change macrome configuration
-  - CI only needs `node`, not even `git` or `watchman` (this will be true soon)
+Note that [the file in the screenshot](https://github.com/iter-tools/regex/blob/v0.1.4/lib/internal/engine.js) was checked into git after being generated, which enables the github repository itself to function as a node package! Such a package can be trivially forked, and any user's fork can be used like so:
+```jsonc
+// package.json
+{
+  "dependencies": {
+    "@iter-tools/regex": "github:user/regex#commitish"
+  }
+}
+```
 
 Macrome's power comes from the header comments it places in the generated code files it writes, allowing it to identify them later. Its principal innovation is reading these comments efficiently, as well as the ability to place comments in multiple kinds of files. To clean a project for a repeatable build, macrome needs only to find and remove files with its headers.
 
-Nothing about Macrome is specific to Javascript, but it is expected to be used mostly on Javascript projects, particularly in combination with the excellent `babel-plugin-macros`.
+Macrome can help in any transpiled scripting language, but it is expected to be used primarily on javascript projects.
 
-Macrome is designed to run either in a CI environment (so you can verify that no assets are stale), or locally. When running locally Macrome can watch your files for changes if you have [watchman](http://facebook.github.io/watchman/docs/install) installed.
+Macrome is designed to run either in a CI environment (so you can verify that no assets are stale), or locally. When running locally Macrome can watch your files for changes if you have [watchman](http://facebook.github.io/watchman/docs/install) installed. Macrome offers `macrome check` which can be used in CI to guard against stale files and verify the repeatability of build assets generated locally.
 
 ## Usage
 
@@ -55,14 +53,12 @@ Macrome can also be imported and used in scripts (though CLI usage is preferred)
 const { Macrome } = require('macrome');
 
 const macrome = new Macrome(configOptions); // same as cli options, but camel case
-macrome.clean();
-macrome.build();
-macrome.watch();
+await macrome.build();
 ```
 
 ## Generators
 
-Macrome's build steps are known as generators. A generator defines lifecylce hooks, the implementations of which can use `api` objects to interact with macrome and the filesystem
+Macrome's build steps are known as generators. A generator defines lifecycle hooks, the implementations of which can use `api` objects to interact with macrome and the filesystem
 
 In a config, a generator is specified as either `generatorPath` or `[generatorPath, options]`, where `options` are passed to the class constructor.
 
